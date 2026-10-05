@@ -1,0 +1,65 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": ["arn:aws:s3:::updraft-*", "arn:aws:s3:::updraft-*/*"]
+    },
+    {
+      "Effect": "Allow",
+      "Action": "lambda:*",
+      "Resource": "arn:aws:lambda:us-east-1:724654236968:function:updraft-*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["cloudformation:*Stack*", "cloudformation:*ChangeSet*", "cloudformation:Describe*", "cloudformation:GetTemplate"],
+      "Resource": [
+        "arn:aws:cloudformation:us-east-1:724654236968:stack/updraft-*/*",
+        "arn:aws:cloudformation:us-east-1:aws:transform/Serverless-2016-10-31"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudfront:*Distribution*", "cloudfront:*OriginAccessControl*", "cloudfront:*ResponseHeadersPolicy*",
+        "cloudfront:*Invalidation*", "cloudfront:*CachePolic*", "cloudfront:*Tag*",
+        "acm:*Certificate*", "acm:*Tags*", "route53:Get*", "route53:List*",
+        "cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary", "logs:DescribeLogGroups"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/*",
+      "Condition": {
+        "ForAllValues:StringLike": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": ["updraftpotterystudio.com", "*.updraftpotterystudio.com"]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole", "iam:UntagRole", "iam:List*RolePolicies"],
+      "Resource": "arn:aws:iam::724654236968:role/updraft-*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
+      "Resource": "arn:aws:iam::724654236968:role/updraft-*",
+      "Condition": { "ArnEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" } }
+    },
+    {
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::724654236968:role/updraft-*",
+      "Condition": { "StringEquals": { "iam:PassedToService": "lambda.amazonaws.com" } }
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["logs:GetLogEvents", "logs:FilterLogEvents", "logs:DescribeLogStreams"],
+      "Resource": "arn:aws:logs:us-east-1:724654236968:log-group:/aws/lambda/updraft-*:*"
+    }
+  ]
+}
