@@ -70,6 +70,7 @@ function productCard(item) {
 }
 
 const isShipping = () => form.fulfillment.value === "shipping";
+const shipSeparately = () => isShipping() && !form.shipSame.checked;
 const subtotal = () => getCart().reduce((n, l) => n + l.price * l.quantity, 0);
 
 function renderCart() {
@@ -123,16 +124,84 @@ function renderCart() {
   $("#t-sub").textContent = money(subtotal());
   $("#t-ship-row").hidden = !(isShipping() && ship > 0);
   $("#t-ship").textContent = money(ship);
-  payBtn.textContent = `Pay ${money(subtotal() + ship)} + tax`;
+  requestQuote();
 }
 
+// Billing is always required; the shipping section shows only for shipping, and its fields only
+// when the customer unticks "Ship to my billing address".
+function syncAddressSections() {
+  $("#shipping").hidden = !isShipping();
+  $("#ship-fields").hidden = !shipSeparately();
+  for (const input of form.querySelectorAll("[data-ship]")) input.required = shipSeparately();
+}
 form.addEventListener("change", (e) => {
-  if (e.target.name !== "fulfillment") return;
-  $("#address").hidden = !isShipping();
-  for (const input of form.querySelectorAll("[data-ship-required]")) input.required = isShipping();
-  renderCart();
+  if (e.target.name === "fulfillment") { syncAddressSections(); renderCart(); }
+  if (e.target.name === "shipSame") syncAddressSections();
+  // Carry the billing ZIP into Square's card form, which asks for one itself.
+  if (e.target.name === "billZip" && card && /^\d{5}$/.test(e.target.value.trim())) {
+    try { card.configure({ postalCode: e.target.value.trim() }); } catch { /* older SDK: buyer types it */ }
+  }
 });
 document.addEventListener("cart-changed", renderCart);
+
+// ---- tax and total, looked up from Square before paying ----------------------------------
+let quote = null;      // { key, subtotal, shipping, tax, total } for the current cart, or null
+let quoting = false;
+let quoteSeq = 0;
+let quoteTimer = null;
+let cardReady = false;
+const quoteKey = () => JSON.stringify([getCart().map((l) => [l.variationId, l.quantity]), form.fulfillment.value]);
+
+function updatePayButton() {
+  payBtn.disabled = !cardReady || quoting;
+  const fallback = subtotal() + (isShipping() ? config.shippingCents : 0);
+  payBtn.textContent = quoting ? "Looking up tax…" : quote ? `Pay ${money(quote.total)}` : `Pay ${money(fallback)} + tax`;
+}
+
+function showQuote(state, q) {
+  const tax = $("#t-tax"), total = $("#t-total"), note = $("#quote-status");
+  for (const el of [tax, total]) el.setAttribute("aria-busy", String(state === "loading"));
+  if (state === "loading") {
+    tax.textContent = "…"; total.textContent = "…";
+    note.textContent = "Looking up sales tax…";
+  } else if (state === "ok") {
+    tax.textContent = money(q.tax); total.textContent = money(q.total);
+    if (q.shipping) $("#t-ship").textContent = money(q.shipping);
+    note.textContent = `Sales tax ${money(q.tax)}. Total ${money(q.total)}.`;
+  } else {
+    tax.textContent = "–"; total.textContent = "–";
+    note.textContent = "Couldn't look up sales tax right now. It will be added when you pay.";
+  }
+  updatePayButton();
+}
+
+function requestQuote() {
+  if (!getCart().length) return;
+  const key = quoteKey();
+  if (quote?.key === key) return showQuote("ok", quote);
+  quote = null; quoting = true;
+  showQuote("loading");
+  clearTimeout(quoteTimer);
+  // Short debounce so clicking + several times sends one request.
+  quoteTimer = setTimeout(async () => {
+    const seq = ++quoteSeq;
+    try {
+      const res = await api("/api/quote", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ lines: getCart().map((l) => ({ variationId: l.variationId, quantity: l.quantity })), fulfillment: form.fulfillment.value }),
+      });
+      const out = await res.json();
+      if (seq !== quoteSeq) return; // a newer cart change is already being looked up
+      if (!res.ok) throw new Error(out.errors?.[0]);
+      quote = { key, ...out }; quoting = false;
+      showQuote("ok", quote);
+    } catch {
+      if (seq !== quoteSeq) return;
+      quoting = false;
+      showQuote("error");
+    }
+  }, 250);
+}
 
 // Validation: messages sit next to each field and are linked with aria-describedby.
 // "ZIP code" -> "ZIP code", "Full name" -> "full name"
@@ -147,7 +216,12 @@ function validate() {
   let first = null;
   for (const input of form.querySelectorAll("label.field input")) {
     clearError(input);
+    if (input.closest("[hidden]")) continue; // e.g. shipping fields while shipping to the billing address
     input.value = input.value.trim();
+    if (input.name === "phone") {
+      const digits = input.value.replace(/\D/g, "").length;
+      input.setCustomValidity(input.value && (digits < 10 || digits > 15) ? "bad" : "");
+    }
     if (input.checkValidity()) continue;
     const msg = document.createElement("span");
     msg.className = "field-err";
@@ -187,27 +261,50 @@ async function initSquare() {
   await new Promise((ok, fail) => document.head.append(Object.assign(document.createElement("script"), { src: `https://${host}/v1/square.js`, onload: ok, onerror: fail })));
   const payments = window.Square.payments(config.squareAppId, config.squareLocationId);
   card = await payments.card();
-  await card.attach("#card-container");
-  payBtn.disabled = false;
+  const zip = form.billZip.value.trim();
+  await card.attach("#card-container", /^\d{5}$/.test(zip) ? { postalCode: zip } : undefined);
+  cardReady = true;
+  updatePayButton();
 }
+
+const address = (f, p) => ({ line1: f.get(`${p}Line1`), line2: f.get(`${p}Line2`), city: f.get(`${p}City`), state: f.get(`${p}State`), postalCode: f.get(`${p}Zip`) });
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
-  if (!card || !validate()) return;
+  if (!card || quoting || !validate()) return;
   const f = new FormData(form);
+  const billing = address(f, "bill");
+  const [givenName, ...rest] = f.get("name").trim().split(/\s+/);
+  const amount = quote?.total ?? subtotal() + (isShipping() ? config.shippingCents : 0);
   payBtn.disabled = true; say("Processing…", "ok");
   try {
-    const tok = await card.tokenize();
+    // The billing contact lets Square run its card checks (3-D Secure) with fewer false declines.
+    const tok = await card.tokenize({
+      amount: (amount / 100).toFixed(2), currencyCode: "USD", intent: "CHARGE", customerInitiated: true, sellerKeyedIn: false,
+      billingContact: {
+        givenName, familyName: rest.join(" ") || undefined, email: f.get("email"), phone: f.get("phone") || undefined,
+        addressLines: [billing.line1, billing.line2].filter(Boolean), city: billing.city, state: billing.state.toUpperCase(),
+        postalCode: billing.postalCode, countryCode: "US",
+      },
+    });
     if (tok.status !== "OK") throw new Error(tok.errors?.map((x) => x.message).join(" ") || "Card details look incorrect.");
     const body = {
       sourceId: tok.token,
       idempotencyKey: idemKey(),
       lines: getCart().map((l) => ({ variationId: l.variationId, quantity: l.quantity })),
-      name: f.get("name"), email: f.get("email"), fulfillment: f.get("fulfillment"),
-      address: isShipping() ? Object.fromEntries(["line1", "line2", "city", "state", "postalCode"].map((k) => [k, f.get(k)])) : undefined,
+      name: f.get("name"), email: f.get("email"), phone: f.get("phone"), fulfillment: f.get("fulfillment"),
+      billing,
+      shipping: !isShipping() ? undefined
+        : shipSeparately() ? { name: f.get("shipName"), ...address(f, "ship") } : { name: f.get("name"), ...billing },
+      expectedTotal: quote?.total,
     };
     const res = await api("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
     const out = await res.json();
+    if (res.status === 409 && Number.isInteger(out.total)) {
+      // Price or tax changed since it was shown: drop the old quote and look it up again.
+      quote = null;
+      requestQuote();
+    }
     if (!res.ok) throw new Error(out.errors?.join(" ") || "Payment failed.");
     clearCart(); resetIdem();
     form.hidden = true;
@@ -220,9 +317,10 @@ form.addEventListener("submit", async (e) => {
   } catch (err) {
     // A failed attempt may have changed the cart or card, so use a fresh key next time.
     resetIdem();
-    say(err.message, "err"); payBtn.disabled = false;
+    say(err.message, "err"); updatePayButton();
   }
 });
 
+syncAddressSections();
 renderProducts();
 renderCart();

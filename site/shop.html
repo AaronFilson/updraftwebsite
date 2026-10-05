@@ -30,10 +30,13 @@
           <div id="cart-lines"><p class="empty">Your cart is empty.</p></div>
 
           <form id="checkout" hidden novalidate>
-            <div class="totals">
+            <div class="totals" aria-labelledby="totals-title">
+              <span class="vh" id="totals-title">Order total</span>
               <div><span>Subtotal</span><span id="t-sub"></span></div>
               <div id="t-ship-row" hidden><span>Shipping</span><span id="t-ship"></span></div>
-              <small class="muted">Sales tax, if any, is added when you pay.</small>
+              <div><span>Sales tax</span><span id="t-tax">–</span></div>
+              <div class="total-row"><span>Total</span><span id="t-total">–</span></div>
+              <small class="muted" id="quote-status" role="status"></small>
             </div>
 
             <fieldset>
@@ -48,15 +51,29 @@
               <legend>Contact</legend>
               <label class="field">Full name <input name="name" autocomplete="name" required></label>
               <label class="field">Email (for your receipt) <input name="email" type="email" autocomplete="email" required></label>
+              <label class="field">Phone (optional, for pickup or delivery questions) <input name="phone" type="tel" autocomplete="tel" inputmode="tel"></label>
             </fieldset>
 
-            <fieldset id="address" hidden>
-              <legend>Shipping address</legend>
-              <label class="field">Street address <input name="line1" autocomplete="address-line1" data-ship-required></label>
-              <label class="field">Apt, suite (optional) <input name="line2" autocomplete="address-line2"></label>
-              <label class="field">City <input name="city" autocomplete="address-level2" data-ship-required></label>
-              <label class="field">State (2 letters, e.g. WA) <input name="state" maxlength="2" autocomplete="address-level1" pattern="[A-Za-z]{2}" data-ship-required></label>
-              <label class="field">ZIP code <input name="postalCode" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}(-[0-9]{4})?" data-ship-required></label>
+            <fieldset>
+              <legend>Billing address (US)</legend>
+              <label class="field">Street address <input name="billLine1" autocomplete="billing address-line1" required></label>
+              <label class="field">Apt, suite (optional) <input name="billLine2" autocomplete="billing address-line2"></label>
+              <label class="field">City <input name="billCity" autocomplete="billing address-level2" required></label>
+              <label class="field">State (2 letters, e.g. WA) <input name="billState" maxlength="2" autocomplete="billing address-level1" pattern="[A-Za-z]{2}" required></label>
+              <label class="field">ZIP code <input name="billZip" inputmode="numeric" autocomplete="billing postal-code" pattern="[0-9]{5}(-[0-9]{4})?" required></label>
+            </fieldset>
+
+            <fieldset id="shipping" hidden>
+              <legend>Shipping address (US)</legend>
+              <label class="check"><input type="checkbox" name="shipSame" checked aria-controls="ship-fields"> Ship to my billing address</label>
+              <div id="ship-fields" hidden>
+                <label class="field">Recipient name <input name="shipName" autocomplete="shipping name" data-ship></label>
+                <label class="field">Street address <input name="shipLine1" autocomplete="shipping address-line1" data-ship></label>
+                <label class="field">Apt, suite (optional) <input name="shipLine2" autocomplete="shipping address-line2"></label>
+                <label class="field">City <input name="shipCity" autocomplete="shipping address-level2" data-ship></label>
+                <label class="field">State (2 letters, e.g. WA) <input name="shipState" maxlength="2" autocomplete="shipping address-level1" pattern="[A-Za-z]{2}" data-ship></label>
+                <label class="field">ZIP code <input name="shipZip" inputmode="numeric" autocomplete="shipping postal-code" pattern="[0-9]{5}(-[0-9]{4})?" data-ship></label>
+              </div>
             </fieldset>
 
             <fieldset>

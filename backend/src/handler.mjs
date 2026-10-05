@@ -1,5 +1,6 @@
 // Lambda handler (API Gateway HTTP API / Function URL, payload v2) for the shop.
 //   GET  /api/catalog   -> items for sale, read from the Square catalog
+//   POST /api/quote     -> tax and total for a cart (Square calculates; nothing is created)
 //   POST /api/checkout  -> builds a Square order from variation ids + quantities, then charges the card
 //   POST /api/subscribe -> adds an email to the Square customer directory (and newsletter group, if set)
 // Prices are always taken from Square, never from the browser.
@@ -121,89 +122,141 @@ export async function subscribe(b, ip = "unknown") {
   return respond(200, { ok: true });
 }
 
-function validateCheckout(b) {
-  const errors = [];
+// ---- orders, quotes and checkout ---------------------------------------------------------
+const ZIP_RE = /^\d{5}(-\d{4})?$/;
+const STATE_RE = /^[A-Za-z]{2}$/;
+const text = (v, max = 100) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+
+function validateLines(b, errors) {
   if (!Array.isArray(b.lines) || !b.lines.length || b.lines.length > MAX_LINES) errors.push("Cart is empty or too large.");
   for (const l of b.lines ?? []) {
     if (typeof l.variationId !== "string" || !Number.isInteger(l.quantity) || l.quantity < 1 || l.quantity > MAX_QTY)
       errors.push("Invalid cart line.");
   }
+  if (b.fulfillment !== "shipping" && b.fulfillment !== "pickup") errors.push("Choose pickup or shipping.");
+}
+
+// US addresses only for now. `who` names the address in error messages.
+function cleanAddress(a, who, errors, { needName = false } = {}) {
+  a ??= {};
+  const out = {
+    name: text(a.name), line1: text(a.line1), line2: text(a.line2), city: text(a.city, 60),
+    state: text(a.state, 20).toUpperCase(), postalCode: text(a.postalCode, 20), // long enough that bad input fails the checks below
+  };
+  if ((needName && !out.name) || !out.line1 || !out.city || !STATE_RE.test(out.state) || !ZIP_RE.test(out.postalCode))
+    errors.push(`Complete ${who} address required.`);
+  return out;
+}
+
+// Square wants 9-16 digits; normalise US numbers to E.164 and drop anything unusable.
+function cleanPhone(v) {
+  const digits = String(v ?? "").replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return digits.length >= 9 && digits.length <= 16 ? `+${digits}` : undefined;
+}
+
+const splitName = (full) => { const [first, ...rest] = full.trim().split(/\s+/); return { first, last: rest.join(" ") || undefined }; };
+const squareAddress = (a, name) => {
+  const { first, last } = splitName(name);
+  return {
+    addressLine1: a.line1, addressLine2: a.line2 || undefined, locality: a.city,
+    administrativeDistrictLevel1: a.state, postalCode: a.postalCode, country: "US", firstName: first, lastName: last,
+  };
+};
+
+// The parts of the order that decide its price; shared by /api/quote and /api/checkout so they always agree.
+function priceableOrder(b) {
+  const shipping = Number(SHIPPING_CENTS);
+  return {
+    locationId: SQUARE_LOCATION_ID,
+    lineItems: b.lines.map((l) => ({ catalogObjectId: l.variationId, quantity: String(l.quantity) })),
+    pricingOptions: { autoApplyTaxes: true },
+    serviceCharges:
+      b.fulfillment === "shipping" && shipping > 0
+        ? [{ name: "Shipping", amountMoney: { amount: BigInt(shipping), currency: "USD" }, calculationPhase: "SUBTOTAL_PHASE" }]
+        : undefined,
+  };
+}
+
+async function unknownLines(lines) {
+  const known = new Set((await loadCatalog()).flatMap((i) => i.variations.map((v) => v.id)));
+  return lines.some((l) => !known.has(l.variationId));
+}
+
+// Tax and total for the cart, before paying. Nothing is created in Square.
+export async function quote(b) {
+  const errors = [];
+  validateLines(b, errors);
+  if (errors.length) return respond(400, { errors });
+  if (await unknownLines(b.lines)) return respond(400, { errors: ["An item is no longer available."] });
+  const { order } = await square().orders.calculate({ order: priceableOrder(b) });
+  return respond(200, {
+    subtotal: Number(order.totalMoney.amount) - Number(order.totalTaxMoney?.amount ?? 0) - Number(order.totalServiceChargeMoney?.amount ?? 0),
+    shipping: Number(order.totalServiceChargeMoney?.amount ?? 0),
+    tax: Number(order.totalTaxMoney?.amount ?? 0),
+    total: Number(order.totalMoney.amount),
+  });
+}
+
+function validateCheckout(b) {
+  const errors = [];
+  validateLines(b, errors);
   if (typeof b.sourceId !== "string" || !b.sourceId) errors.push("Missing payment token.");
   if (!EMAIL_RE.test(b.email ?? "")) errors.push("A valid email is required.");
-  if (!b.name?.trim()) errors.push("Name is required.");
-  if (b.fulfillment === "shipping") {
-    const a = b.address ?? {};
-    if (!a.line1 || !a.city || !a.state || !a.postalCode) errors.push("Complete shipping address required.");
-  } else if (b.fulfillment !== "pickup") errors.push("Choose pickup or shipping.");
-  return errors;
+  if (!text(b.name)) errors.push("Name is required.");
+  // Every order paid on the site needs a billing address; shipped orders also need where to send it.
+  const billing = cleanAddress(b.billing, "billing", errors);
+  const shipping = b.fulfillment === "shipping" ? cleanAddress(b.shipping, "shipping", errors, { needName: true }) : null;
+  return { errors, billing, shipping };
 }
 
 export async function checkout(b) {
-  const errors = validateCheckout(b);
+  const { errors, billing, shipping } = validateCheckout(b);
   if (errors.length) return respond(400, { errors });
+  if (await unknownLines(b.lines)) return respond(400, { errors: ["An item is no longer available."] });
 
-  // Only allow variations that exist in the live catalog.
-  const known = new Set((await loadCatalog()).flatMap((i) => i.variations.map((v) => v.id)));
-  if (b.lines.some((l) => !known.has(l.variationId))) return respond(400, { errors: ["An item is no longer available."] });
+  const name = text(b.name);
+  const phone = cleanPhone(b.phone);
+  const fulfillment = shipping
+    ? {
+        type: "SHIPMENT",
+        state: "PROPOSED",
+        shipmentDetails: {
+          recipient: { displayName: shipping.name, emailAddress: b.email, phoneNumber: phone, address: squareAddress(shipping, shipping.name) },
+        },
+      }
+    : { type: "PICKUP", state: "PROPOSED", pickupDetails: { recipient: { displayName: name, emailAddress: b.email, phoneNumber: phone }, scheduleType: "ASAP" } };
 
-  const [first, ...rest] = b.name.trim().split(/\s+/);
-  const recipient = { displayName: b.name.trim(), emailAddress: b.email };
-  const fulfillment =
-    b.fulfillment === "pickup"
-      ? { type: "PICKUP", state: "PROPOSED", pickupDetails: { recipient, scheduleType: "ASAP" } }
-      : {
-          type: "SHIPMENT",
-          state: "PROPOSED",
-          shipmentDetails: {
-            recipient: {
-              ...recipient,
-              address: {
-                addressLine1: b.address.line1,
-                addressLine2: b.address.line2 || undefined,
-                locality: b.address.city,
-                administrativeDistrictLevel1: b.address.state,
-                postalCode: b.address.postalCode,
-                country: "US",
-                firstName: first,
-                lastName: rest.join(" ") || undefined,
-              },
-            },
-          },
-        };
+  // Never charge something other than what the customer was shown (prices or tax changed meanwhile).
+  // Checked with a calculation first, so a mismatch doesn't leave an unpaid order behind in Square.
+  if (Number.isInteger(b.expectedTotal)) {
+    const { order: preview } = await square().orders.calculate({ order: priceableOrder(b) });
+    const now = Number(preview.totalMoney.amount);
+    if (now !== b.expectedTotal)
+      return respond(409, { errors: ["The total changed since it was shown. Please check the new total and pay again."], total: now });
+  }
 
-  const shipping = Number(SHIPPING_CENTS);
   const key = typeof b.idempotencyKey === "string" && b.idempotencyKey.length <= 40 ? b.idempotencyKey : randomUUID();
-
   const { order } = await square().orders.create({
     idempotencyKey: `o-${key}`,
-    order: {
-      locationId: SQUARE_LOCATION_ID,
-      lineItems: b.lines.map((l) => ({ catalogObjectId: l.variationId, quantity: String(l.quantity) })),
-      fulfillments: [fulfillment],
-      pricingOptions: { autoApplyTaxes: true },
-      serviceCharges:
-        b.fulfillment === "shipping" && shipping > 0
-          ? [{ name: "Shipping", amountMoney: { amount: BigInt(shipping), currency: "USD" }, calculationPhase: "SUBTOTAL_PHASE" }]
-          : undefined,
-    },
+    order: { ...priceableOrder(b), fulfillments: [fulfillment] },
   });
+  const total = Number(order.totalMoney.amount);
 
   const { payment } = await square().payments.create({
     idempotencyKey: `p-${key}`,
     sourceId: b.sourceId,
-    verificationToken: b.verificationToken,
     locationId: SQUARE_LOCATION_ID,
     orderId: order.id,
     amountMoney: order.totalMoney,
     buyerEmailAddress: b.email,
+    buyerPhoneNumber: phone,
+    billingAddress: squareAddress(billing, name),
+    shippingAddress: shipping ? squareAddress(shipping, shipping.name) : undefined,
   });
 
-  return respond(200, {
-    orderId: order.id,
-    total: Number(order.totalMoney.amount),
-    status: payment.status,
-    receiptUrl: payment.receiptUrl,
-  });
+  return respond(200, { orderId: order.id, total, status: payment.status, receiptUrl: payment.receiptUrl });
 }
 
 export async function handler(event) {
@@ -212,6 +265,7 @@ export async function handler(event) {
   try {
     if (method === "OPTIONS") return respond(204, "");
     if (method === "GET" && path === "/api/catalog") return respond(200, { items: await loadCatalog() }, { "cache-control": "public, max-age=60" });
+    if (method === "POST" && path === "/api/quote") return await quote(JSON.parse(event.body ?? "{}"));
     if (method === "POST" && path === "/api/checkout") return await checkout(JSON.parse(event.body ?? "{}"));
     if (method === "POST" && path === "/api/subscribe")
       return await subscribe(JSON.parse(event.body ?? "{}"), event.requestContext?.http?.sourceIp);
@@ -221,7 +275,8 @@ export async function handler(event) {
       // Card declines etc. are safe and useful to show; anything else stays in the logs.
       const msgs = (err.errors ?? []).filter((e) => e.category === "PAYMENT_METHOD_ERROR").map((e) => e.detail);
       console.error("Square error", err.statusCode, JSON.stringify(err.errors));
-      const fallback = path === "/api/subscribe" ? "Couldn't sign you up right now. Please try again later." : "Payment could not be completed.";
+      const fallback = path === "/api/subscribe" ? "Couldn't sign you up right now. Please try again later."
+        : path === "/api/quote" ? "Couldn't look up tax right now." : "Payment could not be completed.";
       return respond(msgs.length ? 402 : 502, { errors: msgs.length ? msgs : [fallback] });
     }
     console.error(err);
