@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "preview": "npx serve dist"
+    "preview": "npx serve dist",
+    "publish": "node scripts/publish.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
