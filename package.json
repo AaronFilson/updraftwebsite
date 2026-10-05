@@ -1,0 +1,14 @@
+{
+  "name": "updraft-website",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "preview": "npx serve dist"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "html-minifier-terser": "^7.2.0",
+    "sharp": "^0.35.5"
+  }
+}

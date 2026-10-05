@@ -1,0 +1,13 @@
+{
+  "name": "updraft-backend",
+  "version": "1.0.0",
+  "description": "Square catalog + checkout API for Updraft Pottery Studio",
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "square": "^46.0.0"
+  },
+  "private": true,
+  "type": "module"
+}

@@ -1,0 +1,56 @@
+[
+  {
+    "image": "images/kiln-shed/01.jpg",
+    "title": "First firing in the shed",
+    "description": "The updraft kiln firing under its new vent hood.",
+    "alt": "First firing in the shed. The updraft kiln firing under its new vent hood."
+  },
+  {
+    "image": "images/kiln-shed/02.jpg",
+    "title": "Vent hood",
+    "description": "The kiln under the vent hood.",
+    "alt": "Vent hood. The kiln under the vent hood."
+  },
+  {
+    "image": "images/kiln-shed/03.jpg",
+    "title": "The updraft kiln",
+    "description": "The propane kiln, banded with steel straps.",
+    "alt": "The updraft kiln. The propane kiln, banded with steel straps."
+  },
+  {
+    "image": "images/kiln-shed/04.jpg",
+    "title": "Controls",
+    "description": "Temperature controllers mounted on the wall.",
+    "alt": "Controls. Temperature controllers mounted on the wall."
+  },
+  {
+    "image": "images/kiln-shed/05.jpg",
+    "title": "Loaded",
+    "description": "A load of white ware in the kiln.",
+    "alt": "Loaded. A load of white ware in the kiln."
+  },
+  {
+    "image": "images/kiln-shed/06.jpg",
+    "title": "Foundation",
+    "description": "The firebrick floor and burner port set into the ground.",
+    "alt": "Foundation. The firebrick floor and burner port set into the ground."
+  },
+  {
+    "image": "images/kiln-shed/07.jpg",
+    "title": "On its pad",
+    "description": "The kiln set on its foundation.",
+    "alt": "On its pad. The kiln set on its foundation."
+  },
+  {
+    "image": "images/kiln-shed/08.jpg",
+    "title": "Burner",
+    "description": "The propane burner connected at the base.",
+    "alt": "Burner. The propane burner connected at the base."
+  },
+  {
+    "image": "images/kiln-shed/09.jpg",
+    "title": "Night firing",
+    "description": "Firing the updraft kiln after dark.",
+    "alt": "Night firing. Firing the updraft kiln after dark."
+  }
+]

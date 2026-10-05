@@ -1,0 +1,56 @@
+[
+  {
+    "image": "images/artist/08.jpg",
+    "title": "Meet the potter",
+    "description": "The inspiring water, sky, trees, and energy of the Salish Sea (Puget Sound).",
+    "alt": "Smiling bearded man in a flat cap and navy jacket on a Puget Sound beach at low tide"
+  },
+  {
+    "image": "images/artist/09.jpg",
+    "title": "At the soda kiln",
+    "description": "In front of the soda kiln at Elinor Maroney’s studio in Covington.",
+    "alt": "Aaron Filson standing in front of the open soda kiln"
+  },
+  {
+    "image": "images/artist/07.jpg",
+    "title": "The mountain is out",
+    "description": "Mount Tahoma over the city of Tacoma, where the studio lives",
+    "alt": "Snow-covered Mount Rainier rising above the Tacoma tideflats and city on a clear day"
+  },
+  {
+    "image": "images/artist/06.jpg",
+    "title": "Dusk in the mountains",
+    "description": "Olympic mountain range up the Hamma Hamma",
+    "alt": "Forested mountain ridge with mist on the peaks under a lavender dusk sky"
+  },
+  {
+    "image": "images/artist/01.jpg",
+    "title": "At Tikal",
+    "description": "Visiting the Maya temples at Tikal, Guatemala.",
+    "alt": "Selfie in front of a tall stepped Maya temple under a clear sky"
+  },
+  {
+    "image": "images/artist/04.jpg",
+    "title": "GTNP last day hike out",
+    "description": "Good gear means good times.",
+    "alt": "Selfie in a rain-soaked jacket and hood with a covered backpack among evergreens"
+  },
+  {
+    "image": "images/artist/02.jpg",
+    "title": "Go M's",
+    "description": "Taking in a Mariners game in Seattle.",
+    "alt": "Selfie in a blue Mariners jersey at a crowded baseball stadium"
+  },
+  {
+    "image": "images/artist/03.jpg",
+    "title": "Sunbeam nap",
+    "description": "Even the supervisor needs a break.",
+    "alt": "Small scruffy white and tan dog asleep on a bed in stripes of sunlight"
+  },
+  {
+    "image": "images/artist/05.jpg",
+    "title": "Supervisor at rest",
+    "description": "The calmest he gets with eyes open.",
+    "alt": "Small scruffy white and tan dog curled on a couch with its chin on a pale blue pillow"
+  }
+]

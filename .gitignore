@@ -43,3 +43,14 @@ app/test/bndl/**
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# AWS SAM
+backend/.aws-sam/
+backend/samconfig.toml
+.env
+
+# Build output
+dist/
+.cache/
+backend/packaged.yaml
+
