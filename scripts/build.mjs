@@ -83,28 +83,32 @@ async function images() {
   return meta;
 }
 
-function figureHtml(entry, meta, eager, level) {
+// Justified-row tile: --r (aspect ratio) drives both the flex sizing and the image box,
+// so every photo keeps its real proportions and each row has an even height.
+function figureHtml(entry, meta, eager) {
   const m = meta[entry.image];
   if (!m) throw new Error(`Missing image ${entry.image}`);
   const widths = Object.keys(m.webp).map(Number);
+  const r = +(m.width / m.height).toFixed(3);
   // The 1600px size is only fetched when a visitor opens the lightbox.
   const srcset = (fmt) => widths.filter((w) => w < 1600).map((w) => `${m[fmt][w]} ${w}w`).join(", ");
-  const sizes = "(min-width:1100px) 340px, (min-width:600px) 45vw, 92vw";
+  // Tiles are about r x 220px, but can stretch to fill a row, and fill the width on small screens.
+  const sizes = `(max-width:600px) min(100vw, ${Math.round(r * 260)}px), ${Math.round(r * 340)}px`;
   const alt = esc(entry.alt ?? entry.title);
   const full = m.full ? ` data-full="${m.full.url}" data-full-size="${mb(m.full.size)}"` : "";
-  return `<figure class="card">
-<a href="${m.webp[widths.at(-1)]}" class="zoom" data-alt="${alt}" data-title="${esc(entry.title)}"${full}>
+  const desc = entry.description ? ` data-desc="${esc(entry.description)}"` : "";
+  return `<figure class="tile" style="--r:${r}">
+<a href="${m.webp[widths.at(-1)]}" class="zoom" data-alt="${alt}" data-title="${esc(entry.title)}"${desc}${full}>
 <picture><source type="image/avif" srcset="${srcset("avif")}" sizes="${sizes}">
 <img src="${m.webp[400]}" srcset="${srcset("webp")}" sizes="${sizes}"
  width="${m.width}" height="${m.height}" alt="${alt}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async"></picture></a>
-<figcaption class="card-body"><h${level}>${esc(entry.title)}</h${level}>${entry.description ? `<p>${esc(entry.description)}</p>` : ""}</figcaption>
+<figcaption>${esc(entry.title)}</figcaption>
 </figure>`;
 }
 
-// level: heading level for card titles, so each page keeps an unbroken outline.
-async function gallery(file, meta, { eagerFirst = false, level = 3 } = {}) {
+async function gallery(file, meta, { eagerFirst = false } = {}) {
   const items = JSON.parse(await readFile(path.join(SRC, "data", file), "utf8"));
-  return `<div class="grid">${items.map((e, i) => figureHtml(e, meta, eagerFirst && i === 0, level)).join("\n")}</div>`;
+  return `<div class="gallery">${items.map((e, i) => figureHtml(e, meta, eagerFirst && i === 0)).join("\n")}</div>`;
 }
 
 async function ogImage() {
@@ -241,7 +245,7 @@ const sizes = {
   }, shared),
   "past-work.html": await page("past-work.html", {
     ...common("/past-work.html"),
-    "<!--archive-->": await gallery("archive.json", meta, { eagerFirst: true, level: 2 }),
+    "<!--archive-->": await gallery("archive.json", meta, { eagerFirst: true }),
   }, shared),
   "kilns.html": await page("kilns.html", {
     ...common("/kilns.html"),

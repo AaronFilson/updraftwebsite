@@ -58,7 +58,8 @@ nav a[aria-current] { text-decoration: underline; text-decoration-thickness: 2px
 
 /* sections */
 .hero { padding-block: clamp(3rem, 12vw, 8rem); }
-.hero p { font-size: 1.25rem; color: var(--muted); max-width: 40ch; }
+.hero p { font-size: 1.25rem; color: var(--muted); }
+.hero :is(h1, p) { text-wrap: balance; } /* if a line still has to wrap on small screens, keep it even */
 section { padding-block: clamp(2.5rem, 7vw, 5rem); }
 .lede { color: var(--muted); max-width: 60ch; }
 .btn { display: inline-block; border: 0; cursor: pointer; font: 600 1rem var(--sans); background: var(--accent); color: var(--accent-ink); padding: .8rem 1.4rem; border-radius: 99px; text-decoration: none; min-height: 44px; }
@@ -69,10 +70,9 @@ section { padding-block: clamp(2.5rem, 7vw, 5rem); }
 /* cards / grids */
 .grid { display: grid; gap: clamp(1rem, 3vw, 1.75rem); grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); }
 .card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
-.card picture { display: block; }
 .card img, .ph { aspect-ratio: 1; width: 100%; object-fit: cover; background: var(--line); }
 .card-body { padding: 1rem 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .5rem; flex: 1; }
-.card-body :is(h2, h3) { font-size: 1.25rem; margin: 0 0 .3em; }
+.card-body h3 { font-size: 1.25rem; margin: 0 0 .3em; }
 .card-body p { margin: 0; color: var(--muted); font-size: .95rem; }
 .price { font-weight: 600; }
 .row { display: flex; gap: .5rem; align-items: center; justify-content: space-between; margin-top: auto; flex-wrap: wrap; }
@@ -82,6 +82,17 @@ label.field { display: grid; gap: .25rem; font-size: .95rem; }
 .field-err { color: #b03224; font-size: .9rem; }
 @media (prefers-color-scheme: dark) { [aria-invalid="true"] { border-color: #ff8a7a; } .field-err { color: #ff9d8f; } }
 .empty { padding: 2rem; border: 2px dashed var(--line); border-radius: var(--radius); color: var(--muted); text-align: center; }
+
+/* photo galleries: justified rows. Each tile's flex basis and growth are proportional to its
+   aspect ratio (--r), so all tiles in a row share one height and nothing is cropped. */
+.gallery { --row: clamp(110px, 20vw, 220px); display: flex; flex-wrap: wrap; gap: clamp(.5rem, 1.5vw, .9rem); }
+.gallery::after { content: ""; flex-grow: 999; } /* keeps the last row from stretching */
+.tile { margin: 0; flex: var(--r) 1 calc(var(--r) * var(--row)); min-width: 0; display: flex; flex-direction: column; gap: .35rem; }
+.tile a { display: block; border-radius: 10px; overflow: hidden; background: var(--line); }
+.tile picture { display: block; }
+.tile img { width: 100%; height: auto; aspect-ratio: var(--r); object-fit: cover; transition: transform .35s ease; }
+.tile a:hover img, .tile a:focus-visible img { transform: scale(1.03); }
+.tile figcaption { font-size: .9rem; line-height: 1.35; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
 /* cart + checkout */
 .shop-layout { display: grid; gap: 2rem; }
@@ -103,6 +114,7 @@ legend { font-weight: 600; margin-bottom: .4rem; }
 [hidden] { display: none !important; }
 
 .page-title { font-size: clamp(2rem, 6vw, 3rem); }
+main > section + section, .hero + section { padding-top: 0; } /* consecutive sections: one gap, not two */
 .panel-title { font-size: 1.5rem; }
 .muted { color: var(--muted); }
 .wide { width: 100%; }
@@ -116,13 +128,21 @@ section > h2 + .lede, section > .lede { margin-bottom: 1.5rem; }
 .terms dt { font: 600 1.15rem var(--serif); margin-top: 1.4rem; }
 .terms dd { margin: .3rem 0 0; color: var(--muted); }
 
-.lightbox { padding: 0; border: 0; background: none; max-width: 96vw; max-height: 96vh; }
-.lightbox::backdrop { background: rgb(0 0 0 / 0.85); }
-.lightbox img { max-width: 96vw; max-height: 86vh; width: auto; height: auto; aspect-ratio: auto; border-radius: 8px; }
-.lightbox p { margin: .5rem 0 0; color: #f1e9df; text-align: center; font-size: .95rem; }
-.lightbox p a { color: #f3b08f; margin-left: .75rem; }
-.lightbox form { position: fixed; top: .75rem; right: .75rem; }
-.lightbox button { width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgb(255 255 255 / 0.9); color: #222; font-size: 1.6rem; cursor: pointer; }
+.lightbox { padding: 0; border: 0; background: none; max-width: 100vw; max-height: 100vh; width: 100vw; height: 100vh; overflow: hidden; }
+.lightbox::backdrop { background: rgb(12 10 9 / 0.97); }
+.lightbox figure { margin: 0; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 3.5rem clamp(.5rem, 6vw, 5rem) 1rem; }
+.lightbox img { max-width: 100%; max-height: calc(100vh - 9rem); width: auto; height: auto; border-radius: 8px; object-fit: contain; }
+.lightbox figcaption { color: #f1e9df; text-align: center; font-size: .95rem; max-width: 60ch; display: grid; gap: .2rem; }
+.lightbox figcaption strong { font: 600 1.15rem var(--serif); }
+.lightbox .lb-desc { color: #d6cabd; }
+.lightbox .lb-meta { color: #b3a597; font-size: .85rem; }
+.lightbox figcaption a { color: #f3b08f; margin-left: .5rem; }
+.lightbox button { position: fixed; width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgb(255 255 255 / 0.9); color: #222; font-size: 1.6rem; line-height: 1; cursor: pointer; }
+.lightbox .lb-close { top: .75rem; right: .75rem; }
+.lightbox .lb-prev, .lightbox .lb-next { top: 50%; translate: 0 -50%; }
+.lightbox .lb-prev { left: .75rem; }
+.lightbox .lb-next { right: .75rem; }
+.lightbox :focus-visible { outline-color: #f3b08f; }
 
 footer { border-top: 1px solid var(--line); padding-block: 2rem; color: var(--muted); font-size: .95rem; }
 footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
