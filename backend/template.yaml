@@ -18,8 +18,10 @@ Resources:
   Api:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: .
-      Handler: src/handler.handler
+      # Only the esbuild bundle is deployed (npm run deploy:api builds it), never the backend folder:
+      # that would also ship backend/.env with the Square token.
+      CodeUri: .build
+      Handler: index.handler
       Runtime: nodejs22.x
       MemorySize: 256
       Timeout: 20

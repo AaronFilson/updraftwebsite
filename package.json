@@ -5,7 +5,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "preview": "npx serve dist",
-    "publish": "node scripts/publish.mjs"
+    "publish": "node scripts/publish.mjs",
+    "deploy:api": "node scripts/deploy-api.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.28.2",

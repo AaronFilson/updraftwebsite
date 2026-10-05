@@ -47,14 +47,7 @@ Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and eac
 ## Setup
 
 1. **Square app**: [developer.squareup.com](https://developer.squareup.com/apps) > create an application. Note the Application ID, the Access Token (sandbox first) and your Location ID.
-2. **Deploy the API** (AWS CLI only; SAM CLI not required):
-   ```
-   cd backend && npm ci --omit=dev
-   aws cloudformation package --template-file template.yaml --s3-bucket YOUR-ARTIFACT-BUCKET --output-template-file packaged.yaml
-   aws cloudformation deploy --template-file packaged.yaml --stack-name updraft-api --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
-     --parameter-overrides SquareAccessToken=... SquareLocationId=... SquareEnv=sandbox ShippingCents=0 SiteOrigin=https://yourdomain.com NewsletterGroupId=
-   ```
-   Copy the `ApiUrl` output (without the trailing `/`) into `site/js/config.js` as `apiBase`, along with `squareAppId`, `squareLocationId`, `squareEnv`, `shippingCents`.
+2. **Deploy the API**: copy `backend/.env.example` to `backend/.env` (git-ignored), fill in the access token and settings, then run `npm run deploy:api`. It bundles the handler (only the bundle is uploaded, so `.env` never ships), deploys the `updraft-api` stack, and routes `/api/*` through CloudFront. Put `squareAppId`, `squareLocationId`, `squareEnv` and `shippingCents` in `site/js/config.js` (public values only), then `npm run publish`.
 3. **Site hosting**: S3 bucket (private) + CloudFront with Origin Access Control, default root object `index.html`, custom error response 404 -> `/error.html`, and an ACM certificate for your domain. Turn on **Compress objects automatically** (gzip/Brotli) in the CloudFront cache behavior. Upload the content-hashed folders with long caching and everything else (HTML, favicon, manifest, robots, sitemap) with short caching:
    ```
    aws s3 sync dist/ s3://YOUR-BUCKET --delete --exclude "*" --include "assets/*" --include "img/*" --include "full/*" --cache-control "public,max-age=31536000,immutable"

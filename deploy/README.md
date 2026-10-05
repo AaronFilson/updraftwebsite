@@ -7,7 +7,7 @@ That policy only reaches resources named `updraft-*` and DNS records under `updr
 | Piece | What | How it is managed |
 |---|---|---|
 | `updraft-site` stack ([`site.yaml`](site.yaml)) | S3 bucket `updraft-site-724654236968`, CloudFront, HTTPS certificate, security headers | `aws cloudformation deploy` |
-| `updraft-api` stack ([`../backend/template.yaml`](../backend/template.yaml)) | Lambda + Function URL for shop and signup | see the main README |
+| `updraft-api` stack ([`../backend/template.yaml`](../backend/template.yaml)) | Lambda + Function URL for shop and signup | `npm run deploy:api` |
 | DNS (zone `Z88UBBDI22ZJ9`) | apex + `www` A/AAAA aliases to CloudFront | `node scripts/dns-cutover.mjs` |
 
 ## Publish an update (the usual task)
@@ -23,12 +23,18 @@ npm run publish -- --dry-run  # preview what would change
 aws cloudformation deploy --template-file deploy/site.yaml --stack-name updraft-site
 ```
 
-Once the API is deployed, route `/api/*` through CloudFront so the site can keep `apiBase: ""`:
+Parameters you don't pass (like `ApiDomain`) keep their current values.
+
+## Deploy or update the Square API
 
 ```
-aws cloudformation deploy --template-file deploy/site.yaml --stack-name updraft-site \
-  --parameter-overrides ApiDomain=<function-url-host-without-https-or-slash>
+cp backend/.env.example backend/.env   # once; fill in SQUARE_ACCESS_TOKEN etc. (git-ignored)
+npm run deploy:api
 ```
+
+This bundles `backend/src/handler.mjs` with esbuild (only the bundle is uploaded, so `.env` never ships),
+deploys the `updraft-api` stack via the `updraft-artifacts-724654236968` bucket, and redeploys `updraft-site`
+with `ApiDomain` so CloudFront routes `/api/*` to it. The token goes from `.env` straight to AWS and is never printed.
 
 ## Switching the domain (one time) and rolling back
 
