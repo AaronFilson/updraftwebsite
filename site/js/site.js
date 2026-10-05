@@ -4,7 +4,8 @@ import "./cart-badge.js";
 // The full-size JPEG is never fetched unless the visitor clicks "Full size".
 const dialog = document.createElement("dialog");
 dialog.className = "lightbox";
-dialog.innerHTML = '<form method="dialog"><button aria-label="Close">×</button></form><img alt=""><p><span></span> <a target="_blank" rel="noopener"></a></p>';
+dialog.setAttribute("aria-labelledby", "lightbox-title");
+dialog.innerHTML = '<form method="dialog"><button aria-label="Close">×</button></form><img alt=""><p><span id="lightbox-title"></span> <a target="_blank" rel="noopener"></a></p>';
 document.body.append(dialog);
 const big = dialog.querySelector("img");
 const title = dialog.querySelector("span");
@@ -20,7 +21,7 @@ document.addEventListener("click", (e) => {
   fullLink.hidden = !a.dataset.full;
   if (a.dataset.full) {
     fullLink.href = a.dataset.full;
-    fullLink.textContent = `Full size (JPG, ${a.dataset.fullSize})`;
+    fullLink.textContent = `Full size (JPG, ${a.dataset.fullSize}, opens in new tab)`;
   }
   dialog.showModal();
 });

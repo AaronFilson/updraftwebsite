@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shop | Updraft Pottery Studio</title>
   <meta name="description" content="Order handmade pottery from Updraft Pottery Studio in Tacoma, WA.">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<!--meta-->
   <link rel="stylesheet" href="{{css}}">
   <script type="module" src="{{js}}"></script>
 </head>
@@ -17,11 +17,15 @@
       <h1 class="page-title">Shop</h1>
       <div class="shop-layout">
         <div>
-          <div id="products" class="grid" aria-live="polite"><p class="empty">Loading pieces…</p></div>
+          <div id="products" class="grid" aria-busy="true">
+            <p class="empty">Loading pieces…</p>
+            <noscript><p class="empty">The shop needs JavaScript turned on. You can still browse <a href="/#work">recent work</a> and <a href="/past-work.html">past work</a>.</p></noscript>
+          </div>
         </div>
 
         <aside class="panel" id="cart" aria-label="Cart and checkout">
-          <h2 class="panel-title">Your cart</h2>
+          <h2 class="panel-title" id="cart-title" tabindex="-1">Your cart</h2>
+          <p id="announce" class="vh" aria-live="polite"></p>
           <div id="cart-lines"></div>
 
           <form id="checkout" hidden novalidate>
@@ -41,17 +45,17 @@
 
             <fieldset>
               <legend>Contact</legend>
-              <input name="name" placeholder="Full name" autocomplete="name" required>
-              <input name="email" type="email" placeholder="Email for receipt" autocomplete="email" required>
+              <label class="field">Full name <input name="name" autocomplete="name" required></label>
+              <label class="field">Email (for your receipt) <input name="email" type="email" autocomplete="email" required></label>
             </fieldset>
 
             <fieldset id="address" hidden>
               <legend>Shipping address</legend>
-              <input name="line1" placeholder="Street address" autocomplete="address-line1">
-              <input name="line2" placeholder="Apt, suite (optional)" autocomplete="address-line2">
-              <input name="city" placeholder="City" autocomplete="address-level2">
-              <input name="state" placeholder="State (e.g. WA)" maxlength="2" autocomplete="address-level1">
-              <input name="postalCode" placeholder="ZIP" inputmode="numeric" autocomplete="postal-code">
+              <label class="field">Street address <input name="line1" autocomplete="address-line1" data-ship-required></label>
+              <label class="field">Apt, suite (optional) <input name="line2" autocomplete="address-line2"></label>
+              <label class="field">City <input name="city" autocomplete="address-level2" data-ship-required></label>
+              <label class="field">State (2 letters, e.g. WA) <input name="state" maxlength="2" autocomplete="address-level1" pattern="[A-Za-z]{2}" data-ship-required></label>
+              <label class="field">ZIP code <input name="postalCode" inputmode="numeric" autocomplete="postal-code" pattern="[0-9]{5}(-[0-9]{4})?" data-ship-required></label>
             </fieldset>
 
             <fieldset>
@@ -60,6 +64,7 @@
             </fieldset>
 
             <div id="status" role="status"></div>
+            <div id="error" role="alert"></div>
             <button class="btn wide" id="pay" type="submit" disabled>Pay</button>
             <p class="muted small">Payments are processed securely by Square.</p>
           </form>
