@@ -8,6 +8,11 @@ Parameters:
   SquareEnv: { Type: String, Default: sandbox, AllowedValues: [sandbox, production] }
   ShippingCents: { Type: String, Default: "0" }
   SiteOrigin: { Type: String, Description: "e.g. https://updraftpottery.com (used for CORS)" }
+  ApiConcurrency: { Type: Number, Default: 5, Description: "Max concurrent API invocations (abuse cap). 0 = no reservation (needed on new accounts with low Lambda limits)" }
+  NewsletterGroupId: { Type: String, Default: "", Description: "Optional Square customer group id that website signups are added to" }
+
+Conditions:
+  CapConcurrency: !Not [!Equals [!Ref ApiConcurrency, 0]]
 
 Resources:
   Api:
@@ -18,6 +23,7 @@ Resources:
       Runtime: nodejs22.x
       MemorySize: 256
       Timeout: 20
+      ReservedConcurrentExecutions: !If [CapConcurrency, !Ref ApiConcurrency, !Ref AWS::NoValue]
       Environment:
         Variables:
           SQUARE_ACCESS_TOKEN: !Ref SquareAccessToken
@@ -25,6 +31,7 @@ Resources:
           SQUARE_ENV: !Ref SquareEnv
           SHIPPING_CENTS: !Ref ShippingCents
           ALLOWED_ORIGIN: !Ref SiteOrigin
+          NEWSLETTER_GROUP_ID: !Ref NewsletterGroupId
       FunctionUrlConfig:
         AuthType: NONE
 

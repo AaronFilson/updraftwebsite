@@ -1,4 +1,6 @@
 import "./cart-badge.js";
+import "./hero.js";
+import "./signup.js";
 
 // Lightbox: links point at the large image, so this works (as a plain link) without JS too.
 // The full-size JPEG is never fetched unless the visitor clicks "Full size".
@@ -10,11 +12,10 @@ dialog.innerHTML = `<form method="dialog"><button class="lb-close" aria-label="C
 <button class="lb-prev" type="button" aria-label="Previous photo">‹</button>
 <button class="lb-next" type="button" aria-label="Next photo">›</button>
 <figure><img alt=""><figcaption aria-live="polite"><strong id="lightbox-title"></strong><span class="lb-desc"></span>
-<span class="lb-meta"><span class="lb-count"></span><a target="_blank" rel="noopener"></a></span></figcaption></figure>`;
+<span class="lb-meta"><span class="lb-count"></span><span class="lb-full"></span></span></figcaption></figure>`;
 document.body.append(dialog);
 const $ = (s) => dialog.querySelector(s);
 const big = $("img");
-const fullLink = $(".lb-meta a");
 
 let group = [];
 let index = 0;
@@ -27,11 +28,11 @@ function show(i) {
   $("#lightbox-title").textContent = a.dataset.title;
   $(".lb-desc").textContent = a.dataset.desc ?? "";
   $(".lb-count").textContent = group.length > 1 ? `${index + 1} of ${group.length}` : "";
-  fullLink.hidden = !a.dataset.full;
-  if (a.dataset.full) {
-    fullLink.href = a.dataset.full;
-    fullLink.textContent = `Full size (JPG, ${a.dataset.fullSize}, opens in new tab)`;
-  }
+  // Built only when there is a file, so the page never contains an <a> without an href.
+  $(".lb-full").replaceChildren(...(a.dataset.full ? [Object.assign(document.createElement("a"), {
+    href: a.dataset.full, target: "_blank", rel: "noopener",
+    textContent: `Full size (JPG, ${a.dataset.fullSize}, opens in new tab)`,
+  })] : []));
   // Warm the cache for the next photo so stepping through feels instant.
   if (group.length > 1) new Image().src = group[(index + 1) % group.length].href;
 }

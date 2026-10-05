@@ -6,7 +6,8 @@
   <title>Shop | Updraft Pottery Studio</title>
   <meta name="description" content="Order handmade pottery from Updraft Pottery Studio in Tacoma, WA.">
 <!--meta-->
-  <link rel="stylesheet" href="{{css}}">
+  {{css}}
+  <noscript><style>.signup-form { display: none; }</style></noscript>
   <script type="module" src="{{js}}"></script>
 </head>
 <body>
@@ -26,7 +27,7 @@
         <aside class="panel" id="cart" aria-label="Cart and checkout">
           <h2 class="panel-title" id="cart-title" tabindex="-1">Your cart</h2>
           <p id="announce" class="vh" aria-live="polite"></p>
-          <div id="cart-lines"></div>
+          <div id="cart-lines"><p class="empty">Your cart is empty.</p></div>
 
           <form id="checkout" hidden novalidate>
             <div class="totals">

@@ -38,6 +38,12 @@ The build:
 
 Products come straight from your Square catalog. Add items in Square Dashboard > Items & services, with a price and a photo. They appear on the shop within a minute. Shop prices and tax are always calculated by Square on the server.
 
+## Email signup
+
+The "First look at new work" form posts to `/api/subscribe`, which adds the address to your Square customer directory (existing customers are matched by email, not duplicated). To keep website signups separate, create a customer group in Square Dashboard > Customers > Groups (e.g. "Website newsletter"), and pass its id as `NewsletterGroupId` when deploying the API. Send emails to that group with Square Marketing. Check Square's email-marketing consent rules before your first campaign.
+
+Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and each running instance allows 5 signup attempts per IP per 10 minutes and ignores repeat signups of the same address within an hour. New AWS accounts with a low Lambda concurrency quota can't reserve concurrency; deploy with `ApiConcurrency=0` there.
+
 ## Setup
 
 1. **Square app**: [developer.squareup.com](https://developer.squareup.com/apps) > create an application. Note the Application ID, the Access Token (sandbox first) and your Location ID.
@@ -46,7 +52,7 @@ Products come straight from your Square catalog. Add items in Square Dashboard >
    cd backend && npm ci --omit=dev
    aws cloudformation package --template-file template.yaml --s3-bucket YOUR-ARTIFACT-BUCKET --output-template-file packaged.yaml
    aws cloudformation deploy --template-file packaged.yaml --stack-name updraft-api --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND \
-     --parameter-overrides SquareAccessToken=... SquareLocationId=... SquareEnv=sandbox ShippingCents=0 SiteOrigin=https://yourdomain.com
+     --parameter-overrides SquareAccessToken=... SquareLocationId=... SquareEnv=sandbox ShippingCents=0 SiteOrigin=https://yourdomain.com NewsletterGroupId=
    ```
    Copy the `ApiUrl` output (without the trailing `/`) into `site/js/config.js` as `apiBase`, along with `squareAppId`, `squareLocationId`, `squareEnv`, `shippingCents`.
 3. **Site hosting**: S3 bucket (private) + CloudFront with Origin Access Control, default root object `index.html`, custom error response 404 -> `/error.html`, and an ACM certificate for your domain. Turn on **Compress objects automatically** (gzip/Brotli) in the CloudFront cache behavior. Upload the content-hashed folders with long caching and everything else (HTML, favicon, manifest, robots, sitemap) with short caching:

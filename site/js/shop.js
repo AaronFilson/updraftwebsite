@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { addToCart, getCart, setQuantity, clearCart, cartCount, money } from "./cart.js";
 import "./cart-badge.js";
+import "./signup.js";
 
 const $ = (s) => document.querySelector(s);
 const form = $("#checkout");

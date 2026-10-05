@@ -19,16 +19,20 @@
     "sameAs": ["https://www.instagram.com/aaronmakespottery/", "https://www.facebook.com/AaronFilsonCeramics/"]
   }
   </script>
-  <link rel="stylesheet" href="{{css}}">
+  {{css}}
+  <noscript><style>.signup-form { display: none; }</style></noscript>
   <script type="module" src="{{js}}"></script>
 </head>
 <body>
 <!--header-->
   <main id="main">
-    <div class="wrap hero">
-      <h1>Pottery shaped by hand,<br> fired in Tacoma.</h1>
-      <p>Functional and sculptural ceramics<br> from Updraft Pottery Studio.</p>
-      <p><a class="btn" href="/shop.html">Shop available pieces</a></p>
+    <div class="wrap hero hero-split">
+      <div class="hero-text">
+        <h1>Pottery shaped by hand,<br> fired in Tacoma.</h1>
+        <p>Functional and sculptural ceramics<br> from Updraft Pottery Studio.</p>
+        <p><a class="btn" href="/shop.html">Shop available pieces</a></p>
+      </div>
+<!--hero-show-->
     </div>
 
     <section id="work">
@@ -38,6 +42,8 @@
         <p class="more"><a href="/past-work.html">See earlier work →</a></p>
       </div>
     </section>
+
+<!--signup-->
 
     <section id="about">
       <div class="wrap">

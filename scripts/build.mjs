@@ -26,7 +26,8 @@ const NAV = [
   ["/#work", "Work"],
   ["/past-work.html", "Past work"],
   ["/kilns.html", "Kilns"],
-  ["/terms.html", "Terms"],
+  // Full label where the nav has room (>= 720px, measured), short one on phones.
+  ["/terms.html", '<span class="nav-long">Ceramic Terms</span><span class="nav-short">Glossary</span>'],
   ["/#about", "About"],
   ["/shop.html", "Shop"],
 ];
@@ -85,30 +86,62 @@ async function images() {
 
 // Justified-row tile: --r (aspect ratio) drives both the flex sizing and the image box,
 // so every photo keeps its real proportions and each row has an even height.
-function figureHtml(entry, meta, eager) {
+// only: restrict the grid srcset to these widths (used to share exact files with the hero slideshow).
+function figureHtml(entry, meta, eager, only) {
   const m = meta[entry.image];
   if (!m) throw new Error(`Missing image ${entry.image}`);
   const widths = Object.keys(m.webp).map(Number);
   const r = +(m.width / m.height).toFixed(3);
   // The 1600px size is only fetched when a visitor opens the lightbox.
-  const srcset = (fmt) => widths.filter((w) => w < 1600).map((w) => `${m[fmt][w]} ${w}w`).join(", ");
-  // Tiles are about r x 220px, but can stretch to fill a row, and fill the width on small screens.
-  const sizes = `(max-width:600px) min(100vw, ${Math.round(r * 260)}px), ${Math.round(r * 340)}px`;
+  const srcset = (fmt) => widths.filter((w) => w < 1600 && (!only || only.includes(w))).map((w) => `${m[fmt][w]} ${w}w`).join(", ");
+  // Rendered tiles are about r x 240px on desktop and r x 130px on phones (rows stretch a little).
+  const sizes = `(max-width:600px) ${Math.round(r * 140)}px, ${Math.round(r * 260)}px`;
   const alt = esc(entry.alt ?? entry.title);
   const full = m.full ? ` data-full="${m.full.url}" data-full-size="${mb(m.full.size)}"` : "";
   const desc = entry.description ? ` data-desc="${esc(entry.description)}"` : "";
   return `<figure class="tile" style="--r:${r}">
 <a href="${m.webp[widths.at(-1)]}" class="zoom" data-alt="${alt}" data-title="${esc(entry.title)}"${desc}${full}>
 <picture><source type="image/avif" srcset="${srcset("avif")}" sizes="${sizes}">
-<img src="${m.webp[400]}" srcset="${srcset("webp")}" sizes="${sizes}"
- width="${m.width}" height="${m.height}" alt="${alt}" ${eager ? 'fetchpriority="high"' : 'loading="lazy"'} decoding="async"></picture></a>
+<img src="${m.webp[only?.[0] ?? 400] ?? m.webp[400]}" srcset="${srcset("webp")}" sizes="${sizes}"
+ width="${m.width}" height="${m.height}" alt="${alt}"${eager === "high" ? ' fetchpriority="high"' : eager ? "" : ' loading="lazy"'} decoding="async"></picture></a>
 <figcaption>${esc(entry.title)}</figcaption>
 </figure>`;
 }
 
-async function gallery(file, meta, { eagerFirst = false } = {}) {
+// Galleries at the top of a page load their first rows eagerly (the largest visible photo may not be the first).
+const EAGER_TILES = 6;
+async function gallery(file, meta, { eagerFirst = false, only } = {}) {
   const items = JSON.parse(await readFile(path.join(SRC, "data", file), "utf8"));
-  return `<div class="gallery">${items.map((e, i) => figureHtml(e, meta, eagerFirst && i === 0)).join("\n")}</div>`;
+  return `<div class="gallery">${items.map((e, i) => figureHtml(e, meta, eagerFirst && (i === 0 ? "high" : i < EAGER_TILES), only)).join("\n")}</div>`;
+}
+
+// Hero slideshow of the artist photos, newest number first (09 -> 01). Only the first slide loads
+// with the page; the script swaps data-srcset -> srcset one slide ahead of showing it.
+// It and the About gallery both use only the 800px files (HERO_WIDTHS), so each photo downloads once.
+const HERO_WIDTHS = [800];
+async function heroShow(meta) {
+  const entries = JSON.parse(await readFile(path.join(SRC, "data", "artist.json"), "utf8"))
+    .sort((a, b) => b.image.localeCompare(a.image, undefined, { numeric: true }));
+  const sizes = "(min-width:700px) 46vw, 100vw";
+  const slides = entries.map((e, i) => {
+    const m = meta[e.image];
+    if (!m) throw new Error(`Missing image ${e.image}`);
+    const w = HERO_WIDTHS.find((x) => m.webp[x]) ?? 400;
+    const set = (fmt) => `${m[fmt][w]} ${w}w`;
+    const [ss, src] = i ? ["data-srcset", "data-src"] : ["srcset", "src"];
+    // Portrait photos are shown whole over a blurred copy of themselves (the script reuses the
+    // loaded image as the backdrop, so no extra file is fetched).
+    const portrait = m.width < m.height;
+    return `<figure class="slide${portrait ? " portrait" : ""}${i ? "" : " is-active"}"${i ? ' aria-hidden="true"' : ""}>
+<picture><source type="image/avif" ${ss}="${set("avif")}" sizes="${sizes}">
+<img ${src}="${m.webp[w]}" ${ss}="${set("webp")}" sizes="${sizes}" width="${m.width}" height="${m.height}" alt="${esc(e.alt ?? e.title)}"${i ? "" : ' fetchpriority="high"'} decoding="async"></picture>
+<figcaption>${esc(e.title)}</figcaption>
+</figure>`;
+  });
+  return `<div class="hero-show" role="group" aria-roledescription="slideshow" aria-label="Photos of the potter and the Pacific Northwest">
+${slides.join("\n")}
+<button class="hero-pause" type="button" aria-label="Pause slideshow" hidden><span aria-hidden="true"></span></button>
+</div>`;
 }
 
 async function ogImage() {
@@ -224,24 +257,31 @@ const meta = await images();
 const og = await ogImage();
 const { apple } = await icons();
 const assets = await bundle();
-const [header, footer] = await Promise.all(["header.html", "footer.html"].map((f) => readFile(path.join(SRC, "partials", f), "utf8")));
+const css = await readFile(path.join(OUT, assets.style), "utf8");
+await rm(path.join(OUT, assets.style)); // inlined into every page instead
+const [header, footer, signup] = await Promise.all(["header.html", "footer.html", "signup.html"].map((f) => readFile(path.join(SRC, "partials", f), "utf8")));
 
 const common = (current, js = assets.site) => ({
   "<!--header-->": header.replace("{{nav}}", nav(current)),
   "<!--footer-->": footer,
-  "{{css}}": "/" + assets.style,
+  // ~4KB gzipped: inlining saves a render-blocking request on every page.
+  "{{css}}": `<style>${css}</style>`,
   "{{js}}": "/" + js,
   "{{year}}": String(new Date().getFullYear()),
   "{{og}}": SITE_URL + og,
   "{{root}}": SITE_URL + "/",
+  "{{signup}}": signup, // in the footer; the home page places it mid-page instead
 });
 const shared = { og, apple };
 
 const sizes = {
   "index.html": await page("index.html", {
     ...common(""),
-    "<!--work-->": await gallery("work.json", meta, { eagerFirst: true }),
-    "<!--artist-->": await gallery("artist.json", meta),
+    "{{signup}}": "",
+    "<!--signup-->": signup,
+    "<!--hero-show-->": await heroShow(meta),
+    "<!--work-->": await gallery("work.json", meta), // below the fold now; the slideshow photo is the priority
+    "<!--artist-->": await gallery("artist.json", meta, { only: HERO_WIDTHS }),
   }, shared),
   "past-work.html": await page("past-work.html", {
     ...common("/past-work.html"),

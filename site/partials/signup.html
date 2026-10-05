@@ -1,0 +1,19 @@
+  <section class="signup" aria-labelledby="signup-title">
+    <div class="wrap signup-inner">
+      <div>
+        <h2 id="signup-title">First look at new work</h2>
+        <p>An occasional email when new pieces come out of the kiln. No spam, and you can unsubscribe anytime.</p>
+      </div>
+      <!-- hidden by a <noscript> style when JS is off, so the address can never be submitted in a URL -->
+      <form class="signup-form" method="post" novalidate>
+        <div class="signup-row">
+          <label class="field">Email address <input type="email" name="email" autocomplete="email" required aria-describedby="signup-status"></label>
+          <button class="btn" type="submit">Sign up</button>
+        </div>
+        <!-- spam trap: real visitors never see or fill this -->
+        <input class="trap" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
+        <p class="signup-status" id="signup-status" role="status"></p>
+      </form>
+      <noscript><p>Signing up needs JavaScript turned on. You can also follow along on <a href="https://www.instagram.com/aaronmakespottery/">Instagram</a>.</p></noscript>
+    </div>
+  </section>
