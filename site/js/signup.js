@@ -1,8 +1,9 @@
-import { config } from "./config.js";
+import { postJson } from "./api.js";
 
 // Email signup: posts to the backend, which adds the address to the Square customer directory.
-for (const form of document.querySelectorAll(".signup-form")) {
-  const input = form.elements.email;
+for (const form of /** @type {NodeListOf<HTMLFormElement>} */ (document.querySelectorAll(".signup-form"))) {
+  const input = /** @type {HTMLInputElement} */ (form.elements.namedItem("email"));
+  const trap = /** @type {HTMLInputElement} */ (form.elements.namedItem("website"));
   const status = form.querySelector(".signup-status");
   const button = form.querySelector("button");
 
@@ -19,14 +20,10 @@ for (const form of document.querySelectorAll(".signup-form")) {
     button.disabled = true;
     status.textContent = "Signing you up…";
     try {
-      const res = await fetch(`${config.apiBase}/api/subscribe`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: input.value, website: form.elements.website.value }),
-      });
+      const res = await postJson("/api/subscribe", { email: input.value, website: trap.value });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.errors?.[0]);
-      form.querySelector(".signup-row").hidden = true;
+      /** @type {HTMLElement} */ (form.querySelector(".signup-row")).hidden = true;
       status.textContent = "You're on the list. Thank you!";
     } catch (err) {
       status.textContent = err.message || "Couldn't sign you up right now. Please try again later.";

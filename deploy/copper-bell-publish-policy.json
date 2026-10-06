@@ -22,10 +22,22 @@
     {
       "Effect": "Allow",
       "Action": [
-        "cloudfront:*Distribution*", "cloudfront:*OriginAccessControl*", "cloudfront:*ResponseHeadersPolicy*",
-        "cloudfront:*Invalidation*", "cloudfront:*CachePolic*", "cloudfront:*Tag*",
-        "acm:*Certificate*", "acm:*Tags*", "route53:Get*", "route53:List*",
-        "cloudformation:ValidateTemplate", "cloudformation:GetTemplateSummary", "logs:DescribeLogGroups"
+        "cloudfront:*Distribution*",
+        "cloudfront:*OriginAccessControl*",
+        "cloudfront:*ResponseHeadersPolicy*",
+        "cloudfront:*Invalidation*",
+        "cloudfront:*CachePolic*",
+        "cloudfront:*Tag*",
+        "acm:*Certificate*",
+        "acm:*Tags*",
+        "route53:Get*",
+        "route53:List*",
+        "cloudformation:ValidateTemplate",
+        "cloudformation:GetTemplateSummary",
+        "logs:DescribeLogGroups",
+        "logs:DescribeMetricFilters",
+        "ssm:DescribeParameters",
+        "cloudwatch:DescribeAlarms"
       ],
       "Resource": "*"
     },
@@ -48,18 +60,77 @@
       "Effect": "Allow",
       "Action": ["iam:AttachRolePolicy", "iam:DetachRolePolicy"],
       "Resource": "arn:aws:iam::724654236968:role/updraft-*",
-      "Condition": { "ArnEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole" } }
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+            "arn:aws:iam::724654236968:policy/updraft-lambda-ssm-read"
+          ]
+        }
+      }
     },
     {
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": "arn:aws:iam::724654236968:role/updraft-*",
-      "Condition": { "StringEquals": { "iam:PassedToService": "lambda.amazonaws.com" } }
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "lambda.amazonaws.com"
+        }
+      }
     },
     {
       "Effect": "Allow",
-      "Action": ["logs:GetLogEvents", "logs:FilterLogEvents", "logs:DescribeLogStreams"],
-      "Resource": "arn:aws:logs:us-east-1:724654236968:log-group:/aws/lambda/updraft-*:*"
+      "Action": [
+        "logs:GetLogEvents",
+        "logs:FilterLogEvents",
+        "logs:DescribeLogStreams",
+        "logs:CreateLogGroup",
+        "logs:DeleteLogGroup",
+        "logs:PutRetentionPolicy",
+        "logs:DeleteRetentionPolicy",
+        "logs:PutMetricFilter",
+        "logs:DeleteMetricFilter",
+        "logs:TagResource",
+        "logs:UntagResource",
+        "logs:ListTagsForResource"
+      ],
+      "Resource": [
+        "arn:aws:logs:us-east-1:724654236968:log-group:/updraft/*",
+        "arn:aws:logs:us-east-1:724654236968:log-group:/aws/lambda/updraft-*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["ssm:PutParameter", "ssm:GetParameter", "ssm:DeleteParameter", "ssm:AddTagsToResource", "ssm:ListTagsForResource"],
+      "Resource": "arn:aws:ssm:us-east-1:724654236968:parameter/updraft/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sns:CreateTopic",
+        "sns:DeleteTopic",
+        "sns:Subscribe",
+        "sns:Unsubscribe",
+        "sns:Get*",
+        "sns:SetTopicAttributes",
+        "sns:ListSubscriptionsByTopic",
+        "sns:TagResource",
+        "sns:UntagResource",
+        "sns:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:sns:us-east-1:724654236968:updraft-*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:TagResource",
+        "cloudwatch:UntagResource",
+        "cloudwatch:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:cloudwatch:us-east-1:724654236968:alarm:updraft-*"
     }
   ]
 }

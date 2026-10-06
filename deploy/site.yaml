@@ -1,9 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
-  Updraft Pottery Studio static site: private S3 bucket behind CloudFront (Origin Access Control),
-  HTTPS for the apex and www, security headers, and an optional /api/* route to the Lambda API.
-  The domain's A records are switched to CloudFront separately (see deploy/README.md), so this
-  stack can be created and tested on its cloudfront.net address first.
+  Updraft Pottery Studio static site, one stack per stage (updraft-site, updraft-staging-site): private
+  S3 bucket behind CloudFront (origin access control), HTTPS, security headers, and /api routes to the
+  Lambda functions, which only CloudFront can call (origin access control of type lambda). Production
+  DNS is switched by scripts/dns-cutover.mjs; staging's record is part of this stack (ManageDns).
 
 Parameters:
   DomainName: { Type: String, Default: updraftpotterystudio.com }
@@ -16,10 +16,20 @@ Parameters:
     Type: String
     Default: ""
     Description: Host of the checkout Function URL (one order at a time). Empty = /api/checkout goes to ApiDomain.
+  ApiFunctionName: { Type: String, Default: "", Description: "Catalog/quote/signup function; set to let only this distribution call it" }
+  CheckoutFunctionName: { Type: String, Default: "", Description: "Checkout function; set to let only this distribution call it" }
+  NameSuffix: { Type: String, Default: "", Description: "Empty for production (keeps existing names), e.g. -staging otherwise" }
+  IncludeWww: { Type: String, Default: "true", AllowedValues: ["true", "false"] }
+  ManageDns: { Type: String, Default: "false", AllowedValues: ["true", "false"], Description: "Create the A/AAAA alias records here (staging)" }
 
 Conditions:
   HasApi: !Not [!Equals [!Ref ApiDomain, ""]]
   HasCheckout: !Not [!Equals [!Ref CheckoutDomain, ""]]
+  LockApi: !Not [!Equals [!Ref ApiFunctionName, ""]]
+  LockCheckout: !Not [!Equals [!Ref CheckoutFunctionName, ""]]
+  LockAny: !Or [!Condition LockApi, !Condition LockCheckout]
+  Www: !Equals [!Ref IncludeWww, "true"]
+  Dns: !Equals [!Ref ManageDns, "true"]
 
 Resources:
   SiteBucket:
@@ -27,7 +37,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub updraft-site-${AWS::AccountId}
+      BucketName: !Sub updraft-site${NameSuffix}-${AWS::AccountId}
       PublicAccessBlockConfiguration: { BlockPublicAcls: true, BlockPublicPolicy: true, IgnorePublicAcls: true, RestrictPublicBuckets: true }
       OwnershipControls: { Rules: [{ ObjectOwnership: BucketOwnerEnforced }] }
       BucketEncryption: { ServerSideEncryptionConfiguration: [{ ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 } }] }
@@ -52,26 +62,75 @@ Resources:
     Type: AWS::CertificateManager::Certificate
     Properties:
       DomainName: !Ref DomainName
-      SubjectAlternativeNames: [!Sub "www.${DomainName}"]
+      SubjectAlternativeNames: !If [Www, [!Sub "www.${DomainName}"], !Ref AWS::NoValue]
       ValidationMethod: DNS
       DomainValidationOptions:
         - { DomainName: !Ref DomainName, HostedZoneId: !Ref HostedZoneId }
-        - { DomainName: !Sub "www.${DomainName}", HostedZoneId: !Ref HostedZoneId }
+        - !If [Www, { DomainName: !Sub "www.${DomainName}", HostedZoneId: !Ref HostedZoneId }, !Ref AWS::NoValue]
 
   OriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub updraft-site-${AWS::AccountId}
+        Name: !Sub updraft-site${NameSuffix}-${AWS::AccountId}
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+
+  # CloudFront signs every request to the Lambda function URLs, which only accept signed requests
+  # (AuthType AWS_IAM), so the API can't be called directly. POST bodies need an
+  # x-amz-content-sha256 header; site/js/api.js adds it.
+  ApiAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Condition: LockAny
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub updraft-api${NameSuffix}-${AWS::AccountId}
+        OriginAccessControlOriginType: lambda
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # Both permissions are needed for CloudFront to call a function URL with origin access control.
+  ApiUrlFromCloudFront:
+    Type: AWS::Lambda::Permission
+    Condition: LockApi
+    Properties:
+      FunctionName: !Ref ApiFunctionName
+      Action: lambda:InvokeFunctionUrl
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+      FunctionUrlAuthType: AWS_IAM
+  ApiInvokeFromCloudFront:
+    Type: AWS::Lambda::Permission
+    Condition: LockApi
+    Properties:
+      FunctionName: !Ref ApiFunctionName
+      Action: lambda:InvokeFunction
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+  CheckoutUrlFromCloudFront:
+    Type: AWS::Lambda::Permission
+    Condition: LockCheckout
+    Properties:
+      FunctionName: !Ref CheckoutFunctionName
+      Action: lambda:InvokeFunctionUrl
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+      FunctionUrlAuthType: AWS_IAM
+  CheckoutInvokeFromCloudFront:
+    Type: AWS::Lambda::Permission
+    Condition: LockCheckout
+    Properties:
+      FunctionName: !Ref CheckoutFunctionName
+      Action: lambda:InvokeFunction
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
 
   SecurityHeaders:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
       ResponseHeadersPolicyConfig:
-        Name: updraft-site-security-headers
+        Name: !Sub updraft-site${NameSuffix}-security-headers
         SecurityHeadersConfig:
           StrictTransportSecurity: { AccessControlMaxAgeSec: 63072000, IncludeSubdomains: true, Override: true }
           ContentTypeOptions: { Override: true }
@@ -96,7 +155,7 @@ Resources:
       DistributionConfig:
         Comment: !Sub ${DomainName} static site
         Enabled: true
-        Aliases: [!Ref DomainName, !Sub "www.${DomainName}"]
+        Aliases: !If [Www, [!Ref DomainName, !Sub "www.${DomainName}"], [!Ref DomainName]]
         ViewerCertificate:
           AcmCertificateArn: !Ref Certificate
           SslSupportMethod: sni-only
@@ -114,12 +173,14 @@ Resources:
             - HasApi
             - Id: api
               DomainName: !Ref ApiDomain
+              OriginAccessControlId: !If [LockApi, !GetAtt ApiAccessControl.Id, !Ref AWS::NoValue]
               CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
             - !Ref AWS::NoValue
           - !If
             - HasCheckout
             - Id: checkout
               DomainName: !Ref CheckoutDomain
+              OriginAccessControlId: !If [LockCheckout, !GetAtt ApiAccessControl.Id, !Ref AWS::NoValue]
               CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
             - !Ref AWS::NoValue
         DefaultCacheBehavior:
@@ -153,6 +214,24 @@ Resources:
         CustomErrorResponses:
           - { ErrorCode: 403, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }
           - { ErrorCode: 404, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }
+
+  # Staging only; production's records are managed by scripts/dns-cutover.mjs.
+  AliasA:
+    Type: AWS::Route53::RecordSet
+    Condition: Dns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: A
+      AliasTarget: { DNSName: !GetAtt Distribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2 }
+  AliasAAAA:
+    Type: AWS::Route53::RecordSet
+    Condition: Dns
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DomainName
+      Type: AAAA
+      AliasTarget: { DNSName: !GetAtt Distribution.DomainName, HostedZoneId: Z2FDTNDATAQYW2 }
 
 Outputs:
   BucketName: { Value: !Ref SiteBucket }

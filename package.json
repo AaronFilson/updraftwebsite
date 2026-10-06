@@ -4,13 +4,31 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "preview": "npx serve dist",
+    "preview": "node scripts/serve.mjs",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "node --test \"site/js/test/*.test.mjs\" && npm --prefix backend test",
+    "test:e2e": "playwright test",
     "publish": "node scripts/publish.mjs",
-    "deploy:api": "node scripts/deploy-api.mjs"
+    "deploy:api": "node scripts/deploy-api.mjs",
+    "put-token": "node scripts/put-token.mjs"
   },
   "devDependencies": {
+    "@aws-sdk/client-ssm": "^3.1146.0",
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.4",
     "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
     "html-minifier-terser": "^7.2.0",
-    "sharp": "^0.35.5"
+    "prettier": "^3.9.9",
+    "sharp": "^0.35.5",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

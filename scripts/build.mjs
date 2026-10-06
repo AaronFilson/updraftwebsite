@@ -12,6 +12,7 @@ import path from "node:path";
 import sharp from "sharp";
 import * as esbuild from "esbuild";
 import { minify } from "html-minifier-terser";
+import { currentStage } from "./stage.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SRC = path.join(ROOT, "site");
@@ -19,6 +20,10 @@ const OUT = path.join(ROOT, "dist");
 const CACHE = path.join(ROOT, ".cache", "images");
 const WIDTHS = [400, 800, 1600];
 const SITE_URL = (process.env.SITE_URL ?? "").replace(/\/$/, "");
+// Per-stage settings (deploy/stages.json): public Square IDs for the browser, and whether search
+// engines may index the stage. STAGE defaults to prod.
+const STAGE = currentStage([]);
+const INDEXABLE = STAGE.indexable;
 const SITE_NAME = "Updraft Pottery Studio";
 const BG = { light: "#f6f1ea", dark: "#1b1714" };
 
@@ -37,7 +42,11 @@ const mb = (bytes) => (bytes / 1048576).toFixed(1) + " MB";
 const hash = (buf) => createHash("sha256").update(buf).digest("hex").slice(0, 8);
 
 async function newer(src, out) {
-  try { return (await stat(out)).mtimeMs >= (await stat(src)).mtimeMs; } catch { return false; }
+  try {
+    return (await stat(out)).mtimeMs >= (await stat(src)).mtimeMs;
+  } catch {
+    return false;
+  }
 }
 
 // Writes buf into dist/<dir>/<name>-<hash><ext> and returns the site-relative URL.
@@ -77,7 +86,9 @@ async function images() {
       try {
         const buf = await readFile(path.join(SRC, "images-full", dir, file));
         entry.full = { url: await emit(`full/${dir}`, base, path.extname(file), buf), size: buf.length };
-      } catch { /* no full-size version for this image */ }
+      } catch {
+        /* no full-size version for this image */
+      }
       meta[`images/${dir}/${file}`] = entry;
     }
   }
@@ -93,7 +104,11 @@ function figureHtml(entry, meta, eager, only) {
   const widths = Object.keys(m.webp).map(Number);
   const r = +(m.width / m.height).toFixed(3);
   // The 1600px size is only fetched when a visitor opens the lightbox.
-  const srcset = (fmt) => widths.filter((w) => w < 1600 && (!only || only.includes(w))).map((w) => `${m[fmt][w]} ${w}w`).join(", ");
+  const srcset = (fmt) =>
+    widths
+      .filter((w) => w < 1600 && (!only || only.includes(w)))
+      .map((w) => `${m[fmt][w]} ${w}w`)
+      .join(", ");
   // Rendered tiles are about r x 240px on desktop and r x 130px on phones (rows stretch a little).
   const sizes = `(max-width:600px) ${Math.round(r * 140)}px, ${Math.round(r * 260)}px`;
   const alt = esc(entry.alt ?? entry.title);
@@ -110,7 +125,12 @@ function figureHtml(entry, meta, eager, only) {
 
 // Galleries at the top of a page load their first rows eagerly (the largest visible photo may not be the first).
 const EAGER_TILES = 6;
-async function gallery(file, meta, { eagerFirst = false, only } = {}) {
+/**
+ * @param {string} file
+ * @param {Record<string, any>} meta
+ * @param {{ eagerFirst?: boolean, only?: number[] }} [opts]
+ */
+async function gallery(file, meta, { eagerFirst = false, only = undefined } = {}) {
   const items = JSON.parse(await readFile(path.join(SRC, "data", file), "utf8"));
   return `<div class="gallery">${items.map((e, i) => figureHtml(e, meta, eagerFirst && (i === 0 ? "high" : i < EAGER_TILES), only)).join("\n")}</div>`;
 }
@@ -120,8 +140,9 @@ async function gallery(file, meta, { eagerFirst = false, only } = {}) {
 // It and the About gallery both use only the 800px files (HERO_WIDTHS), so each photo downloads once.
 const HERO_WIDTHS = [800];
 async function heroShow(meta) {
-  const entries = JSON.parse(await readFile(path.join(SRC, "data", "artist.json"), "utf8"))
-    .sort((a, b) => b.image.localeCompare(a.image, undefined, { numeric: true }));
+  const entries = JSON.parse(await readFile(path.join(SRC, "data", "artist.json"), "utf8")).sort((a, b) =>
+    b.image.localeCompare(a.image, undefined, { numeric: true }),
+  );
   const sizes = "(min-width:700px) 46vw, 100vw";
   const slides = entries.map((e, i) => {
     const m = meta[e.image];
@@ -154,28 +175,41 @@ async function ogImage() {
 async function icons() {
   const svg = await readFile(path.join(SRC, "favicon.svg"), "utf8");
   const inner = svg.replace(/^<svg[^>]*>|<\/svg>\s*$/g, "");
-  const padded = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="${BG.light}"/><g transform="translate(4 4) scale(.75)">${inner}</g></svg>`);
-  const png = (size) => sharp(padded, { density: (72 * size) / 32 }).resize(size, size).png().toBuffer();
+  const padded = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" fill="${BG.light}"/><g transform="translate(4 4) scale(.75)">${inner}</g></svg>`,
+  );
+  const png = (size) =>
+    sharp(padded, { density: (72 * size) / 32 })
+      .resize(size, size)
+      .png()
+      .toBuffer();
   const [apple, i192, i512] = await Promise.all([180, 192, 512].map(async (s) => emit("img", `icon-${s}`, ".png", await png(s))));
   await writeFile(path.join(OUT, "favicon.svg"), svg);
-  await writeFile(path.join(OUT, "site.webmanifest"), JSON.stringify({
-    name: SITE_NAME,
-    short_name: "Updraft",
-    start_url: "/",
-    display: "browser",
-    background_color: BG.light,
-    theme_color: BG.light,
-    icons: [
-      { src: i192, sizes: "192x192", type: "image/png" },
-      { src: i512, sizes: "512x512", type: "image/png" },
-    ],
-  }));
+  await writeFile(
+    path.join(OUT, "site.webmanifest"),
+    JSON.stringify({
+      name: SITE_NAME,
+      short_name: "Updraft",
+      start_url: "/",
+      display: "browser",
+      background_color: BG.light,
+      theme_color: BG.light,
+      icons: [
+        { src: i192, sizes: "192x192", type: "image/png" },
+        { src: i512, sizes: "512x512", type: "image/png" },
+      ],
+    }),
+  );
   return { apple };
 }
 
 async function bundle() {
   const result = await esbuild.build({
-    entryPoints: { site: path.join(SRC, "js", "site.js"), shop: path.join(SRC, "js", "shop.js"), style: path.join(SRC, "css", "style.css") },
+    entryPoints: {
+      site: path.join(SRC, "js", "site.js"),
+      shop: path.join(SRC, "js", "shop.js"),
+      style: path.join(SRC, "css", "style.css"),
+    },
     outdir: path.join(OUT, "assets"),
     bundle: true,
     splitting: true,
@@ -186,6 +220,15 @@ async function bundle() {
     entryNames: "[name]-[hash]",
     chunkNames: "[name]-[hash]",
     metafile: true,
+    // site/js/config.js reads these; only public values (the Square token never reaches the browser).
+    define: {
+      __SITE_CONFIG__: JSON.stringify({
+        squareEnv: STAGE.squareEnv,
+        squareAppId: STAGE.squareAppId,
+        squareLocationId: STAGE.squareLocationId,
+        shippingCents: STAGE.shippingCents,
+      }),
+    },
   });
   const names = {};
   for (const [out, info] of Object.entries(result.metafile.outputs)) {
@@ -212,7 +255,8 @@ function headMeta(name, html, { og, apple }) {
     `<meta name="theme-color" content="${BG.light}" media="(prefers-color-scheme: light)">`,
     `<meta name="theme-color" content="${BG.dark}" media="(prefers-color-scheme: dark)">`,
   ];
-  if (!/<meta name="robots" content="noindex"/.test(html)) {
+  if (!INDEXABLE) tags.push(`<meta name="robots" content="noindex">`);
+  if (INDEXABLE && !/<meta name="robots" content="noindex"/.test(html)) {
     tags.push(
       `<link rel="canonical" href="${pageUrl(name)}">`,
       `<meta property="og:site_name" content="${SITE_NAME}">`,
@@ -244,7 +288,13 @@ async function page(name, replacements, shared) {
     useShortDoctype: true,
     minifyCSS: true,
     // The only inline script is JSON-LD; the minifier also passes fragments here, so leave anything unparseable alone.
-    minifyJS: (text) => { try { return JSON.stringify(JSON.parse(text)); } catch { return text; } },
+    minifyJS: (text) => {
+      try {
+        return JSON.stringify(JSON.parse(text));
+      } catch {
+        return text;
+      }
+    },
   });
   await writeFile(path.join(OUT, name), out);
   return out.length;
@@ -259,7 +309,9 @@ const { apple } = await icons();
 const assets = await bundle();
 const css = await readFile(path.join(OUT, assets.style), "utf8");
 await rm(path.join(OUT, assets.style)); // inlined into every page instead
-const [header, footer, signup] = await Promise.all(["header.html", "footer.html", "signup.html"].map((f) => readFile(path.join(SRC, "partials", f), "utf8")));
+const [header, footer, signup] = await Promise.all(
+  ["header.html", "footer.html", "signup.html"].map((f) => readFile(path.join(SRC, "partials", f), "utf8")),
+);
 
 // Site-wide settings. The policy page (and links to it) is only built once a contact email is set,
 // so a half-finished page can't be published.
@@ -286,23 +338,35 @@ const common = (current, js = assets.site) => ({
 const shared = { og, apple };
 
 const sizes = {
-  "index.html": await page("index.html", {
-    ...common(""),
-    "{{signup}}": "",
-    "<!--signup-->": signup,
-    "<!--hero-show-->": await heroShow(meta),
-    "<!--work-->": await gallery("work.json", meta), // below the fold now; the slideshow photo is the priority
-    "<!--artist-->": await gallery("artist.json", meta, { only: HERO_WIDTHS }),
-  }, shared),
-  "past-work.html": await page("past-work.html", {
-    ...common("/past-work.html"),
-    "<!--archive-->": await gallery("archive.json", meta, { eagerFirst: true }),
-  }, shared),
-  "kilns.html": await page("kilns.html", {
-    ...common("/kilns.html"),
-    "<!--kiln-shed-->": await gallery("kiln-shed.json", meta, { eagerFirst: true }),
-    "<!--soda-kiln-->": await gallery("soda-kiln.json", meta),
-  }, shared),
+  "index.html": await page(
+    "index.html",
+    {
+      ...common(""),
+      "{{signup}}": "",
+      "<!--signup-->": signup,
+      "<!--hero-show-->": await heroShow(meta),
+      "<!--work-->": await gallery("work.json", meta), // below the fold now; the slideshow photo is the priority
+      "<!--artist-->": await gallery("artist.json", meta, { only: HERO_WIDTHS }),
+    },
+    shared,
+  ),
+  "past-work.html": await page(
+    "past-work.html",
+    {
+      ...common("/past-work.html"),
+      "<!--archive-->": await gallery("archive.json", meta, { eagerFirst: true }),
+    },
+    shared,
+  ),
+  "kilns.html": await page(
+    "kilns.html",
+    {
+      ...common("/kilns.html"),
+      "<!--kiln-shed-->": await gallery("kiln-shed.json", meta, { eagerFirst: true }),
+      "<!--soda-kiln-->": await gallery("soda-kiln.json", meta),
+    },
+    shared,
+  ),
   "terms.html": await page("terms.html", common("/terms.html"), shared),
   "care.html": await page("care.html", common("/care.html"), shared),
   ...(email ? { "policies.html": await page("policies.html", common("/policies.html"), shared) } : {}),
@@ -311,14 +375,28 @@ const sizes = {
 };
 
 const indexable = Object.keys(sizes).filter((n) => n !== "error.html");
-await writeFile(path.join(OUT, "robots.txt"), `User-agent: *\nAllow: /\n${SITE_URL ? `Sitemap: ${SITE_URL}/sitemap.xml\n` : ""}`);
-if (SITE_URL) {
-  await writeFile(path.join(OUT, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>
+await writeFile(
+  path.join(OUT, "robots.txt"),
+  INDEXABLE ? `User-agent: *\nAllow: /\n${SITE_URL ? `Sitemap: ${SITE_URL}/sitemap.xml\n` : ""}` : "User-agent: *\nDisallow: /\n",
+); // staging stays out of search results
+if (SITE_URL && INDEXABLE) {
+  await writeFile(
+    path.join(OUT, "sitemap.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${indexable.map((n) => `  <url><loc>${pageUrl(n)}</loc></url>`).join("\n")}
 </urlset>
-`);
+`,
+  );
 }
 
-console.log("Built dist/", Object.entries(sizes).map(([k, v]) => `${k} ${(v / 1024).toFixed(1)}KB`).join(", "));
-if (!SITE_URL) console.warn("SITE_URL not set: canonical/og URLs are relative and no sitemap.xml was written. Use SITE_URL=https://yourdomain npm run build before deploying.");
+console.log(
+  "Built dist/",
+  Object.entries(sizes)
+    .map(([k, v]) => `${k} ${(v / 1024).toFixed(1)}KB`)
+    .join(", "),
+);
+if (!SITE_URL)
+  console.warn(
+    "SITE_URL not set: canonical/og URLs are relative and no sitemap.xml was written. Use SITE_URL=https://yourdomain npm run build before deploying.",
+  );

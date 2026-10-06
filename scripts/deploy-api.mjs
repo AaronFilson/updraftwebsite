@@ -1,60 +1,102 @@
-// Deploys the Square API (backend/template.yaml) as the updraft-api stack, then routes /api/* to it
-// through the updraft-site CloudFront distribution, so the site can keep apiBase: "".
-//   npm run deploy:api
-// Settings come from backend/.env (copy backend/.env.example). The access token is read from that
-// file and passed straight to AWS; it is never printed. Uses the default AWS profile (copper-bell).
+// Deploys the Square API (backend/template.yaml) and the site stack that fronts it, for one stage.
+//   npm run deploy:api                     production (stacks updraft-api, updraft-site)
+//   npm run deploy:api -- --stage staging  staging (updraft-staging-api, updraft-staging-site)
+// Settings come from deploy/stages.json. The Square token is read by the functions from SSM
+// Parameter Store (npm run put-token); it never passes through this script or CloudFormation.
+// The function URLs only accept requests signed by CloudFront (AuthType AWS_IAM + origin access
+// control). Switching an existing stack from public URLs is done in order (API, site, API) so the
+// shop keeps working throughout. Uses the default AWS profile (copper-bell) or the CI role.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
 import * as esbuild from "esbuild";
+import { currentStage } from "./stage.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const BACKEND = path.join(ROOT, "backend");
-const API_STACK = "updraft-api";
-const SITE_STACK = "updraft-site";
-const SITE_ORIGIN = "https://updraftpotterystudio.com";
+const stage = currentStage();
 
 const aws = (...args) => execFileSync("aws", args, { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+const tryAws = (...args) => {
+  try {
+    return execFileSync("aws", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch {
+    return null;
+  }
+};
 const step = (msg) => console.log(`\n== ${msg}`);
+const stackParam = (stack, key) => {
+  const out = tryAws(
+    "cloudformation",
+    "describe-stacks",
+    "--stack-name",
+    stack,
+    "--query",
+    `Stacks[0].Parameters[?ParameterKey=='${key}'].ParameterValue`,
+    "--output",
+    "text",
+  );
+  return out?.trim() || null;
+};
+const outputs = (stack) =>
+  Object.fromEntries(
+    JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", stack, "--query", "Stacks[0].Outputs", "--output", "json")).map(
+      (o) => [o.OutputKey, o.OutputValue],
+    ),
+  );
 
-// --- settings from backend/.env -------------------------------------------------------------
-const envFile = path.join(BACKEND, ".env");
-if (!existsSync(envFile)) throw new Error("backend/.env not found. Copy backend/.env.example to backend/.env and fill it in.");
-const env = Object.fromEntries(
-  readFileSync(envFile, "utf8").split(/\r?\n/)
-    .map((l) => l.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/))
-    .filter(Boolean)
-    .map(([, k, v]) => [k, v.replace(/^(['"])(.*)\1$/, "$2")]),
-);
-const need = (k) => { if (!env[k]) throw new Error(`${k} is empty in backend/.env`); return env[k]; };
-const token = need("SQUARE_ACCESS_TOKEN");
-const squareEnv = env.SQUARE_ENV || "sandbox";
-if (!["sandbox", "production"].includes(squareEnv)) throw new Error("SQUARE_ENV must be sandbox or production");
-if (squareEnv === "sandbox" && !token.startsWith("EAAA")) console.warn("Note: sandbox access tokens usually start with EAAA.");
+console.log(`Stage: ${stage.name} (${stage.siteUrl}), Square ${stage.squareEnv}`);
+
+// --- the token must already be in SSM -----------------------------------------------------------
+step(`Square token parameter ${stage.squareTokenParam}`);
+if (
+  !tryAws(
+    "ssm",
+    "describe-parameters",
+    "--parameter-filters",
+    `Key=Name,Values=${stage.squareTokenParam}`,
+    "--query",
+    "Parameters[0].Name",
+    "--output",
+    "text",
+  )?.includes(stage.squareTokenParam)
+)
+  throw new Error(`No SSM parameter ${stage.squareTokenParam}. Run: npm run put-token -- --stage ${stage.name}`);
+console.log("present (SecureString; not read here)");
 
 const account = JSON.parse(aws("sts", "get-caller-identity", "--output", "json")).Account;
 const artifacts = `updraft-artifacts-${account}`;
 
-// --- package and deploy the Lambda ----------------------------------------------------------
+// --- package the Lambda bundle ------------------------------------------------------------------
 step(`Artifact bucket ${artifacts}`);
-try {
-  aws("s3api", "head-bucket", "--bucket", artifacts);
-  console.log("exists");
-} catch {
+if (tryAws("s3api", "head-bucket", "--bucket", artifacts) === null) {
   aws("s3", "mb", `s3://${artifacts}`);
-  aws("s3api", "put-public-access-block", "--bucket", artifacts, "--public-access-block-configuration",
-    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true");
+  aws(
+    "s3api",
+    "put-public-access-block",
+    "--bucket",
+    artifacts,
+    "--public-access-block-configuration",
+    "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true",
+  );
   console.log("created (private)");
-}
+} else console.log("exists");
 
 // Bundle handler + Square SDK into one file; template.yaml's CodeUri points at this folder only.
+// The AWS SDK (used to read the token from SSM) comes with the Lambda runtime, so it stays out.
 step("Bundling");
 const BUILD = path.join(BACKEND, ".build");
 rmSync(BUILD, { recursive: true, force: true });
 await esbuild.build({
   entryPoints: [path.join(BACKEND, "src", "handler.mjs")],
   outfile: path.join(BUILD, "index.mjs"),
-  bundle: true, platform: "node", target: "node22", format: "esm", minify: true, legalComments: "none",
+  bundle: true,
+  platform: "node",
+  target: "node22",
+  format: "esm",
+  minify: true,
+  legalComments: "none",
+  external: ["@aws-sdk/*"],
   // The Square SDK uses require() internally; give the ES module bundle a real one.
   banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' },
   logLevel: "info",
@@ -62,8 +104,18 @@ await esbuild.build({
 
 step("Packaging");
 const packaged = path.join(BACKEND, "packaged.yaml");
-aws("cloudformation", "package", "--template-file", path.join(BACKEND, "template.yaml"),
-  "--s3-bucket", artifacts, "--s3-prefix", API_STACK, "--output-template-file", packaged);
+aws(
+  "cloudformation",
+  "package",
+  "--template-file",
+  path.join(BACKEND, "template.yaml"),
+  "--s3-bucket",
+  artifacts,
+  "--s3-prefix",
+  stage.apiStack,
+  "--output-template-file",
+  packaged,
+);
 
 // Guard: every uploaded code package must be the small bundle. A big one means the template made
 // `package` zip the whole backend folder (with .env); delete it and stop before anything deploys.
@@ -76,41 +128,76 @@ for (const uri of uris) {
   if (size > 3 * 1024 * 1024) {
     aws("s3", "rm", uri);
     rmSync(packaged, { force: true });
-    throw new Error(`Packaged code ${uri} is ${(size / 1048576).toFixed(1)} MB, so it is not just the bundle (it may contain backend/.env). Deleted it; fix CodeUri in backend/template.yaml.`);
+    throw new Error(
+      `Packaged code ${uri} is ${(size / 1048576).toFixed(1)} MB, so it is not just the bundle (it may contain backend/.env). Deleted it; fix CodeUri in backend/template.yaml.`,
+    );
   }
   console.log(`${uri}: ${(size / 1024).toFixed(0)} KB ok`);
 }
 
-step(`Deploying ${API_STACK} (${squareEnv})`);
-const params = {
-  SquareAccessToken: token,
-  SquareLocationId: need("SQUARE_LOCATION_ID"),
-  SquareEnv: squareEnv,
-  ShippingCents: env.SHIPPING_CENTS || "0",
-  SiteOrigin: SITE_ORIGIN,
-  NewsletterGroupId: env.NEWSLETTER_GROUP_ID || "",
-  ApiConcurrency: env.API_CONCURRENCY || "5",
+// --- deploy -----------------------------------------------------------------------------------
+const apiParams = (urlAuth) => ({
+  SquareTokenParam: stage.squareTokenParam,
+  SquareLocationId: stage.squareLocationId,
+  SquareEnv: stage.squareEnv,
+  ShippingCents: String(stage.shippingCents),
+  SiteOrigin: stage.siteUrl,
+  NewsletterGroupId: stage.newsletterGroupId,
+  ApiConcurrency: String(stage.apiConcurrency),
+  AlertEmail: stage.alertEmail,
+  FunctionUrlAuth: urlAuth,
+});
+const deployApi = (urlAuth) => {
+  step(`Deploying ${stage.apiStack} (function URLs: ${urlAuth})`);
+  aws(
+    "cloudformation",
+    "deploy",
+    "--template-file",
+    packaged,
+    "--stack-name",
+    stage.apiStack,
+    "--capabilities",
+    "CAPABILITY_IAM",
+    "CAPABILITY_AUTO_EXPAND",
+    "--no-fail-on-empty-changeset",
+    "--parameter-overrides",
+    ...Object.entries(apiParams(urlAuth)).map(([k, v]) => `${k}=${v}`),
+  );
 };
+
+// An existing stack with public URLs keeps them until CloudFront is ready to sign (then they lock).
+const wasPublic =
+  stackParam(stage.apiStack, "FunctionUrlAuth") === "NONE" ||
+  (stackParam(stage.apiStack, "SquareLocationId") !== null && stackParam(stage.apiStack, "FunctionUrlAuth") === null);
 try {
-  aws("cloudformation", "deploy", "--template-file", packaged, "--stack-name", API_STACK,
-    "--capabilities", "CAPABILITY_IAM", "CAPABILITY_AUTO_EXPAND", "--no-fail-on-empty-changeset",
-    "--parameter-overrides", ...Object.entries(params).map(([k, v]) => `${k}=${v}`));
+  deployApi(wasPublic ? "NONE" : "AWS_IAM");
+  const api = outputs(stage.apiStack);
+  step(`Routing ${stage.siteStack}: /api/checkout -> ${api.CheckoutFunction}, /api/* -> ${api.ApiFunction}`);
+  aws(
+    "cloudformation",
+    "deploy",
+    "--template-file",
+    path.join(ROOT, "deploy", "site.yaml"),
+    "--stack-name",
+    stage.siteStack,
+    "--no-fail-on-empty-changeset",
+    "--parameter-overrides",
+    `DomainName=${stage.domain}`,
+    `IncludeWww=${stage.includeWww}`,
+    `ManageDns=${stage.manageDns}`,
+    `NameSuffix=${stage.name === "prod" ? "" : `-${stage.name}`}`,
+    `ApiDomain=${new URL(api.ApiUrl).host}`,
+    `CheckoutDomain=${new URL(api.CheckoutUrl).host}`,
+    `ApiFunctionName=${api.ApiFunction}`,
+    `CheckoutFunctionName=${api.CheckoutFunction}`,
+  );
+  if (wasPublic) deployApi("AWS_IAM");
 } finally {
   rmSync(packaged, { force: true });
 }
 
-const apiOutputs = Object.fromEntries(JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", API_STACK,
-  "--query", "Stacks[0].Outputs", "--output", "json")).map((o) => [o.OutputKey, o.OutputValue]));
-const apiHost = new URL(apiOutputs.ApiUrl).host;
-const checkoutHost = new URL(apiOutputs.CheckoutUrl).host;
-console.log(`API: ${apiOutputs.ApiUrl}\nCheckout: ${apiOutputs.CheckoutUrl}`);
-
-// --- route /api/* through CloudFront --------------------------------------------------------
-step(`Routing /api/* on ${SITE_STACK} to ${apiHost}, /api/checkout to ${checkoutHost}`);
-aws("cloudformation", "deploy", "--template-file", path.join(ROOT, "deploy", "site.yaml"), "--stack-name", SITE_STACK,
-  "--no-fail-on-empty-changeset", "--parameter-overrides", `ApiDomain=${apiHost}`, `CheckoutDomain=${checkoutHost}`);
-const site = JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", SITE_STACK,
-  "--query", "Stacks[0].Outputs[?OutputKey=='DistributionDomain'].OutputValue", "--output", "json"))[0];
-
-console.log(`\nDone. Check https://${site}/api/catalog (CloudFront can take a few minutes to pick up the new route).`);
-console.log("Make sure site/js/config.js has squareEnv, squareAppId and squareLocationId for this environment, then npm run publish.");
+const site = outputs(stage.siteStack);
+console.log(
+  `\nDone. ${stage.siteUrl} (CloudFront ${site.DistributionId}). Publish the site with: npm run publish -- --stage ${stage.name}`,
+);
+if (stage.alertEmail) console.log(`Alarms email ${stage.alertEmail}; confirm the SNS subscription email the first time.`);

@@ -7,7 +7,7 @@ const INTERVAL = 15_000;
 
 if (show) {
   const slides = [...show.querySelectorAll(".slide")];
-  const button = show.querySelector(".hero-pause");
+  const button = /** @type {HTMLButtonElement} */ (show.querySelector(".hero-pause"));
   let index = 0;
   let timer = null;
   let userPaused = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -22,8 +22,14 @@ if (show) {
   }
 
   const load = (slide) => {
-    for (const el of slide.querySelectorAll("[data-srcset]")) { el.srcset = el.dataset.srcset; delete el.dataset.srcset; }
-    for (const el of slide.querySelectorAll("[data-src]")) { el.src = el.dataset.src; delete el.dataset.src; }
+    for (const el of slide.querySelectorAll("[data-srcset]")) {
+      el.srcset = el.dataset.srcset;
+      delete el.dataset.srcset;
+    }
+    for (const el of slide.querySelectorAll("[data-src]")) {
+      el.src = el.dataset.src;
+      delete el.dataset.src;
+    }
   };
   const next = () => slides[(index + 1) % slides.length];
 
@@ -41,14 +47,23 @@ if (show) {
   function update() {
     const run = !userPaused && inView;
     if (run && timer === null) timer = setInterval(() => go(index + 1), INTERVAL);
-    if (!run && timer !== null) { clearInterval(timer); timer = null; }
+    if (!run && timer !== null) {
+      clearInterval(timer);
+      timer = null;
+    }
     button.setAttribute("aria-label", userPaused ? "Play slideshow" : "Pause slideshow");
   }
 
   if (slides.length > 1) {
     button.hidden = false;
-    button.addEventListener("click", () => { userPaused = !userPaused; update(); });
-    new IntersectionObserver(([entry]) => { inView = entry.isIntersecting; update(); }).observe(show);
+    button.addEventListener("click", () => {
+      userPaused = !userPaused;
+      update();
+    });
+    new IntersectionObserver(([entry]) => {
+      inView = entry.isIntersecting;
+      update();
+    }).observe(show);
     // Preload the second photo once the page itself has finished loading.
     if (document.readyState === "complete") load(next());
     else addEventListener("load", () => load(next()), { once: true });
