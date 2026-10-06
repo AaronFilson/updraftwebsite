@@ -12,6 +12,18 @@ import { subscribe, _resetLimits as resetSubscribeLimits } from "./subscribe.mjs
 import { _resetSales } from "./stock.mjs";
 
 const routes = new Set((process.env.ROUTES ?? "catalog,quote,subscribe,checkout").split(",").map((r) => r.trim()));
+const posts = { "/api/quote": quote, "/api/checkout": checkout, "/api/subscribe": subscribe };
+
+// A request body must be a JSON object. Anything else is the caller's mistake: answered 400 here so
+// it is never logged as UNHANDLED, which would set off the alarm.
+function readBody(event) {
+  try {
+    const body = JSON.parse(event.body ?? "{}");
+    return body && typeof body === "object" && !Array.isArray(body) ? body : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function handler(event) {
   const method = event.requestContext?.http?.method ?? event.httpMethod;
@@ -22,9 +34,11 @@ export async function handler(event) {
     if (route && !routes.has(route)) return respond(404, { errors: ["Not found"] });
     if (method === "GET" && path === "/api/catalog")
       return respond(200, { items: await loadCatalog() }, { "cache-control": "public, max-age=15" });
-    if (method === "POST" && path === "/api/quote") return await quote(JSON.parse(event.body ?? "{}"));
-    if (method === "POST" && path === "/api/checkout") return await checkout(JSON.parse(event.body ?? "{}"));
-    if (method === "POST" && path === "/api/subscribe") return await subscribe(JSON.parse(event.body ?? "{}"), clientIp(event));
+    if (method === "POST" && posts[path]) {
+      const body = readBody(event);
+      if (!body) return respond(400, { errors: ["Bad request."] });
+      return await posts[path](body, clientIp(event));
+    }
     return respond(404, { errors: ["Not found"] });
   } catch (err) {
     if (err instanceof SquareError) {
@@ -40,7 +54,7 @@ export async function handler(event) {
       return respond(msgs.length ? 402 : 502, { errors: msgs.length ? msgs : [fallback] });
     }
     console.error("UNHANDLED", err);
-    return respond(err instanceof SyntaxError ? 400 : 500, { errors: ["Something went wrong."] });
+    return respond(500, { errors: ["Something went wrong."] });
   }
 }
 

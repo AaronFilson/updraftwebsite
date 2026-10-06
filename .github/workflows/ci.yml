@@ -39,6 +39,11 @@ jobs:
       - name: Check formatting
         run: npm run format:check
 
+      # Understands SAM, unlike `aws cloudformation validate-template` (e.g. properties SAM won't
+      # accept in Globals, which otherwise only fail mid-deploy).
+      - name: Lint CloudFormation templates
+        run: pipx run cfn-lint==1.57.1 backend/template.yaml deploy/site.yaml
+
       - name: Check for known vulnerabilities
         run: |
           npm audit --audit-level=high

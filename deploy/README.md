@@ -42,8 +42,9 @@ redeploy to pick up a new one immediately. After replacing a token in Square, ru
 
 - `deploy:api` refuses to deploy (and deletes the upload) if a code package is over 3 MB, which would mean the whole
   `backend/` folder, `.env` included, was zipped instead of the bundle.
-- Switching an existing stack from public function URLs to CloudFront-only is done API (still public) → site
-  (CloudFront starts signing) → API (locked), so the shop keeps working throughout.
+- Switching an older stack from public function URLs to CloudFront-only goes site first (CloudFront starts
+  signing, which public URLs ignore), then API (URLs locked; CloudFront's permission applies at once), so the
+  shop keeps working throughout.
 
 ## One-time admin setup (AWS console, signed in as an admin)
 

@@ -26,9 +26,23 @@ test("checkout requires an address for shipping", async () => {
   assert.match(res.body, /shipping address/);
 });
 
-test("malformed JSON is 400", async () => {
-  const res = await handler({ requestContext: { http: { method: "POST" } }, rawPath: "/api/checkout", body: "{" });
-  assert.equal(res.statusCode, 400);
+test("malformed or odd-shaped bodies are 400, never logged as UNHANDLED (which would alarm)", async (t) => {
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args.join(" ")));
+  const raw = (path, body) => handler({ requestContext: { http: { method: "POST" } }, rawPath: path, body });
+  const cases = [
+    ["/api/checkout", "{"],
+    ["/api/quote", "null"],
+    ["/api/quote", "123"],
+    ["/api/quote", "[]"],
+    ["/api/quote", '{"lines":5,"fulfillment":"pickup"}'],
+    ["/api/quote", '{"lines":{},"fulfillment":"pickup"}'],
+    ["/api/quote", '{"lines":[null],"fulfillment":"pickup"}'],
+    ["/api/checkout", '{"lines":[null,1],"fulfillment":"pickup"}'],
+    ["/api/subscribe", "null"],
+  ];
+  for (const [path, body] of cases) assert.equal((await raw(path, body)).statusCode, 400, `${path} ${body}`);
+  assert.deepEqual(logged, []);
 });
 
 test("subscribe rejects an invalid email without touching Square", async () => {

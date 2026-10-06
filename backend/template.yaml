@@ -12,11 +12,6 @@ Parameters:
   SiteOrigin: { Type: String, Description: "e.g. https://updraftpotterystudio.com (used for CORS)" }
   ApiConcurrency: { Type: Number, Default: 5, Description: "Max concurrent API invocations (abuse cap). 0 = no reservation (needed on new accounts with low Lambda limits)" }
   NewsletterGroupId: { Type: String, Default: "", Description: "Optional Square customer group id that website signups are added to" }
-  FunctionUrlAuth:
-    Type: String
-    Default: AWS_IAM
-    AllowedValues: [AWS_IAM, NONE]
-    Description: AWS_IAM = only CloudFront (signing with origin access control) can call the functions.
   SsmReadPolicyArn:
     Type: String
     Default: arn:aws:iam::724654236968:policy/updraft-lambda-ssm-read
@@ -35,8 +30,6 @@ Globals:
     Runtime: nodejs22.x
     MemorySize: 256
     Timeout: 20
-    Policies:
-      - !Ref SsmReadPolicyArn # read the token from SSM (plus the basic logging SAM always adds)
     Environment:
       Variables:
         SQUARE_TOKEN_PARAM: !Ref SquareTokenParam
@@ -60,12 +53,15 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .build # only the esbuild bundle, never the backend folder (which holds .env)
+      Policies: [!Ref SsmReadPolicyArn] # read the token from SSM (SAM adds basic logging); not allowed in Globals
       ReservedConcurrentExecutions: !If [CapConcurrency, !Ref ApiConcurrency, !Ref AWS::NoValue]
       LoggingConfig: { LogGroup: !Ref ApiLogs }
       Environment:
         Variables: { ROUTES: "catalog,quote,subscribe" } # merged with Globals; no checkout here
+      # Only CloudFront can call it (it signs requests: origin access control in deploy/site.yaml). Keep
+      # this literal: SAM only adds the public-access permissions for a literal NONE, not a parameter.
       FunctionUrlConfig:
-        AuthType: !Ref FunctionUrlAuth
+        AuthType: AWS_IAM
 
   # Checkout runs one order at a time, so its in-memory record of pieces it has just sold is seen by
   # the next checkout even before Square's stock count catches up (that count lags a few seconds).
@@ -74,13 +70,14 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .build # only the esbuild bundle, never the backend folder (which holds .env)
+      Policies: [!Ref SsmReadPolicyArn] # read the token from SSM (SAM adds basic logging); not allowed in Globals
       ReservedConcurrentExecutions: 1
       Timeout: 30
       LoggingConfig: { LogGroup: !Ref CheckoutLogs }
       Environment:
         Variables: { ROUTES: checkout } # merged with Globals
       FunctionUrlConfig:
-        AuthType: !Ref FunctionUrlAuth
+        AuthType: AWS_IAM # see Api
 
   # ---- alarms, emailed through SNS ------------------------------------------------------------
   Alerts:

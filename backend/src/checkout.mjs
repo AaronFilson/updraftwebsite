@@ -21,14 +21,16 @@ const STATE_RE = /^[A-Za-z]{2}$/;
 const text = (v, max = 100) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
 function validateLines(b, errors) {
-  if (!Array.isArray(b.lines) || !b.lines.length || b.lines.length > MAX_LINES) errors.push("Cart is empty or too large.");
-  for (const l of b.lines ?? []) {
-    if (typeof l.variationId !== "string" || !Number.isInteger(l.quantity) || l.quantity < 1 || l.quantity > MAX_QTY)
+  if (!Array.isArray(b.lines) || !b.lines.length || b.lines.length > MAX_LINES) {
+    errors.push("Cart is empty or too large.");
+    b.lines = [];
+  }
+  for (const l of b.lines) {
+    if (typeof l?.variationId !== "string" || !Number.isInteger(l.quantity) || l.quantity < 1 || l.quantity > MAX_QTY)
       errors.push("Invalid cart line.");
   }
   // One line per piece, so the stock check sees the full quantity asked for.
-  if (Array.isArray(b.lines) && new Set(b.lines.map((l) => l?.variationId)).size !== b.lines.length)
-    errors.push("Each piece can only appear once in the cart.");
+  if (new Set(b.lines.map((l) => l?.variationId)).size !== b.lines.length) errors.push("Each piece can only appear once in the cart.");
   if (b.fulfillment !== "shipping" && b.fulfillment !== "pickup") errors.push("Choose pickup or shipping.");
 }
 

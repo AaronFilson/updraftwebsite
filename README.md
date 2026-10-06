@@ -78,4 +78,4 @@ npm test                           # unit tests: site/js/test and backend/test
 npm run test:e2e                   # browser tests in Chromium, Firefox and WebKit (after a build)
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of these on every push to master and on pull requests. Deploys run from Actions → Deploy ([`deploy.yml`](.github/workflows/deploy.yml)).
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of these, plus `cfn-lint` on the CloudFormation templates, on every push to master and on pull requests. Deploys run from Actions → Deploy ([`deploy.yml`](.github/workflows/deploy.yml)).

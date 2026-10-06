@@ -4,8 +4,8 @@
 // Settings come from deploy/stages.json. The Square token is read by the functions from SSM
 // Parameter Store (npm run put-token); it never passes through this script or CloudFormation.
 // The function URLs only accept requests signed by CloudFront (AuthType AWS_IAM + origin access
-// control). Switching an existing stack from public URLs is done in order (API, site, API) so the
-// shop keeps working throughout. Uses the default AWS profile (copper-bell) or the CI role.
+// control). An older stack with public URLs is switched site-first, so the shop keeps working
+// throughout (see below). Uses the default AWS profile (copper-bell) or the CI role.
 import { execFileSync } from "node:child_process";
 import { readFileSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -40,9 +40,9 @@ const stackParam = (stack, key) => {
 };
 const outputs = (stack) =>
   Object.fromEntries(
-    JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", stack, "--query", "Stacks[0].Outputs", "--output", "json")).map(
-      (o) => [o.OutputKey, o.OutputValue],
-    ),
+    (
+      JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", stack, "--query", "Stacks[0].Outputs", "--output", "json")) ?? []
+    ).map((o) => [o.OutputKey, o.OutputValue]),
   );
 
 console.log(`Stage: ${stage.name} (${stage.siteUrl}), Square ${stage.squareEnv}`);
@@ -136,7 +136,7 @@ for (const uri of uris) {
 }
 
 // --- deploy -----------------------------------------------------------------------------------
-const apiParams = (urlAuth) => ({
+const apiParams = () => ({
   SquareTokenParam: stage.squareTokenParam,
   SquareLocationId: stage.squareLocationId,
   SquareEnv: stage.squareEnv,
@@ -145,10 +145,9 @@ const apiParams = (urlAuth) => ({
   NewsletterGroupId: stage.newsletterGroupId,
   ApiConcurrency: String(stage.apiConcurrency),
   AlertEmail: stage.alertEmail,
-  FunctionUrlAuth: urlAuth,
 });
-const deployApi = (urlAuth) => {
-  step(`Deploying ${stage.apiStack} (function URLs: ${urlAuth})`);
+const deployApi = () => {
+  step(`Deploying ${stage.apiStack} (function URLs accept only CloudFront)`);
   aws(
     "cloudformation",
     "deploy",
@@ -161,17 +160,11 @@ const deployApi = (urlAuth) => {
     "CAPABILITY_AUTO_EXPAND",
     "--no-fail-on-empty-changeset",
     "--parameter-overrides",
-    ...Object.entries(apiParams(urlAuth)).map(([k, v]) => `${k}=${v}`),
+    ...Object.entries(apiParams()).map(([k, v]) => `${k}=${v}`),
   );
 };
 
-// An existing stack with public URLs keeps them until CloudFront is ready to sign (then they lock).
-const wasPublic =
-  stackParam(stage.apiStack, "FunctionUrlAuth") === "NONE" ||
-  (stackParam(stage.apiStack, "SquareLocationId") !== null && stackParam(stage.apiStack, "FunctionUrlAuth") === null);
-try {
-  deployApi(wasPublic ? "NONE" : "AWS_IAM");
-  const api = outputs(stage.apiStack);
+const deploySite = (api) => {
   step(`Routing ${stage.siteStack}: /api/checkout -> ${api.CheckoutFunction}, /api/* -> ${api.ApiFunction}`);
   aws(
     "cloudformation",
@@ -191,7 +184,45 @@ try {
     `ApiFunctionName=${api.ApiFunction}`,
     `CheckoutFunctionName=${api.CheckoutFunction}`,
   );
-  if (wasPublic) deployApi("AWS_IAM");
+};
+
+// The API stack as it is now (null if it doesn't exist yet). Older stacks have no function-name
+// outputs, so those come from the stack's resources.
+function currentApi() {
+  const o = stackParam(stage.apiStack, "SquareLocationId") === null ? {} : outputs(stage.apiStack);
+  if (!o.ApiUrl || !o.CheckoutUrl) return null;
+  const fn = (id) =>
+    o[`${id}Function`] ??
+    aws(
+      "cloudformation",
+      "describe-stack-resource",
+      "--stack-name",
+      stage.apiStack,
+      "--logical-resource-id",
+      id,
+      "--query",
+      "StackResourceDetail.PhysicalResourceId",
+      "--output",
+      "text",
+    ).trim();
+  return { ApiUrl: o.ApiUrl, CheckoutUrl: o.CheckoutUrl, ApiFunction: fn("Api"), CheckoutFunction: fn("Checkout") };
+}
+const urlAuthType = (fn) =>
+  tryAws("lambda", "get-function-url-config", "--function-name", fn, "--query", "AuthType", "--output", "text")?.trim();
+
+// Locking public URLs (an older stack): CloudFront must be signing, and be allowed in, before the
+// URLs switch to AWS_IAM. So the site goes first; public URLs ignore the signature, so the shop keeps
+// working. Then the API deploy flips the URLs to AWS_IAM, which CloudFront's permission (made for
+// AWS_IAM) covers at once; the old public permissions are removed only after that, in cleanup.
+const before = currentApi();
+const unlocked = before && [before.ApiFunction, before.CheckoutFunction].some((f) => urlAuthType(f) !== "AWS_IAM");
+try {
+  if (unlocked) {
+    console.log("\nFunction URLs are public now: letting CloudFront sign first, then locking them.");
+    deploySite(before);
+  }
+  deployApi();
+  deploySite(outputs(stage.apiStack)); // no change unless a URL or function name changed
 } finally {
   rmSync(packaged, { force: true });
 }
