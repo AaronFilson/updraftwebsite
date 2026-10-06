@@ -9,7 +9,8 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  // In CI, "github" puts each failure on the pull request as an annotation (visible without signing in).
+  reporter: process.env.CI ? [["github"], ["list"], ["html", { open: "never" }]] : "list",
   use: { baseURL: "http://localhost:4173", trace: "retain-on-failure" },
   webServer: { command: "node scripts/serve.mjs 4173", url: "http://localhost:4173", reuseExistingServer: !process.env.CI },
   projects: [
