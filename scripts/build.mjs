@@ -261,6 +261,13 @@ const css = await readFile(path.join(OUT, assets.style), "utf8");
 await rm(path.join(OUT, assets.style)); // inlined into every page instead
 const [header, footer, signup] = await Promise.all(["header.html", "footer.html", "signup.html"].map((f) => readFile(path.join(SRC, "partials", f), "utf8")));
 
+// Site-wide settings. The policy page (and links to it) is only built once a contact email is set,
+// so a half-finished page can't be published.
+const siteData = JSON.parse(await readFile(path.join(SRC, "data", "site.json"), "utf8"));
+const email = siteData.contactEmail?.trim() ?? "";
+if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`site.json contactEmail looks wrong: ${email}`);
+const mailto = email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : "";
+
 const common = (current, js = assets.site) => ({
   "<!--header-->": header.replace("{{nav}}", nav(current)),
   "<!--footer-->": footer,
@@ -270,6 +277,10 @@ const common = (current, js = assets.site) => ({
   "{{year}}": String(new Date().getFullYear()),
   "{{og}}": SITE_URL + og,
   "{{root}}": SITE_URL + "/",
+  "{{policiesLink}}": email ? ' · <a href="/policies.html">Shipping &amp; returns</a>' : "",
+  "{{pickupEmail}}": email ? `by email at ${mailto}` : "by email",
+  "{{policiesShopLink}}": email ? '<a href="/policies.html">Shipping, pickup &amp; returns</a>' : "",
+  "{{contactEmail}}": esc(email),
   "{{signup}}": signup, // in the footer; the home page places it mid-page instead
 });
 const shared = { og, apple };
@@ -293,6 +304,8 @@ const sizes = {
     "<!--soda-kiln-->": await gallery("soda-kiln.json", meta),
   }, shared),
   "terms.html": await page("terms.html", common("/terms.html"), shared),
+  "care.html": await page("care.html", common("/care.html"), shared),
+  ...(email ? { "policies.html": await page("policies.html", common("/policies.html"), shared) } : {}),
   "shop.html": await page("shop.html", common("/shop.html", assets.shop), shared),
   "error.html": await page("error.html", common(""), shared),
 };

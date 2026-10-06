@@ -7,7 +7,7 @@ That policy only reaches resources named `updraft-*` and DNS records under `updr
 | Piece | What | How it is managed |
 |---|---|---|
 | `updraft-site` stack ([`site.yaml`](site.yaml)) | S3 bucket `updraft-site-724654236968`, CloudFront, HTTPS certificate, security headers | `aws cloudformation deploy` |
-| `updraft-api` stack ([`../backend/template.yaml`](../backend/template.yaml)) | Lambda + Function URL for shop and signup | `npm run deploy:api` |
+| `updraft-api` stack ([`../backend/template.yaml`](../backend/template.yaml)) | Two Lambdas from one bundle: `Api` (catalog, tax quote, signup) and `Checkout` (one order at a time, so a one-of-a-kind piece can't sell twice) | `npm run deploy:api` |
 | DNS (zone `Z88UBBDI22ZJ9`) | apex + `www` A/AAAA aliases to CloudFront | `node scripts/dns-cutover.mjs` |
 
 ## Publish an update (the usual task)
@@ -34,7 +34,9 @@ npm run deploy:api
 
 This bundles `backend/src/handler.mjs` with esbuild (only the bundle is uploaded, so `.env` never ships),
 deploys the `updraft-api` stack via the `updraft-artifacts-724654236968` bucket, and redeploys `updraft-site`
-with `ApiDomain` so CloudFront routes `/api/*` to it. The token goes from `.env` straight to AWS and is never printed.
+with `ApiDomain`/`CheckoutDomain` so CloudFront routes `/api/checkout` to the checkout function and the rest of `/api/*` to the API.
+The script refuses to deploy (and deletes the upload) if a code package is over 3 MB, which would mean the whole
+`backend/` folder, `.env` included, was zipped instead of the bundle. The token goes from `.env` straight to AWS and is never printed.
 
 ## Switching the domain (one time) and rolling back
 

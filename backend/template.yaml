@@ -14,30 +14,53 @@ Parameters:
 Conditions:
   CapConcurrency: !Not [!Equals [!Ref ApiConcurrency, 0]]
 
+# CodeUri must stay on each function, not here: `aws cloudformation package` ignores Globals and
+# would otherwise zip the whole backend folder, .env included. deploy-api.mjs also checks for that.
+Globals:
+  Function:
+    Handler: index.handler
+    Runtime: nodejs22.x
+    MemorySize: 256
+    Timeout: 20
+    Environment:
+      Variables:
+        SQUARE_ACCESS_TOKEN: !Ref SquareAccessToken
+        SQUARE_LOCATION_ID: !Ref SquareLocationId
+        SQUARE_ENV: !Ref SquareEnv
+        SHIPPING_CENTS: !Ref ShippingCents
+        ALLOWED_ORIGIN: !Ref SiteOrigin
+        NEWSLETTER_GROUP_ID: !Ref NewsletterGroupId
+
 Resources:
+  # Catalog, tax quotes and signups.
   Api:
     Type: AWS::Serverless::Function
     Properties:
-      # Only the esbuild bundle is deployed (npm run deploy:api builds it), never the backend folder:
-      # that would also ship backend/.env with the Square token.
-      CodeUri: .build
-      Handler: index.handler
-      Runtime: nodejs22.x
-      MemorySize: 256
-      Timeout: 20
+      CodeUri: .build # only the esbuild bundle, never the backend folder (which holds .env)
       ReservedConcurrentExecutions: !If [CapConcurrency, !Ref ApiConcurrency, !Ref AWS::NoValue]
       Environment:
-        Variables:
-          SQUARE_ACCESS_TOKEN: !Ref SquareAccessToken
-          SQUARE_LOCATION_ID: !Ref SquareLocationId
-          SQUARE_ENV: !Ref SquareEnv
-          SHIPPING_CENTS: !Ref ShippingCents
-          ALLOWED_ORIGIN: !Ref SiteOrigin
-          NEWSLETTER_GROUP_ID: !Ref NewsletterGroupId
+        Variables: { ROUTES: "catalog,quote,subscribe" } # merged with Globals; no checkout here
+      FunctionUrlConfig:
+        AuthType: NONE
+
+  # Checkout runs one order at a time, so its in-memory record of pieces it has just sold is seen by
+  # the next checkout even before Square's stock count catches up (that count lags a few seconds).
+  # A second simultaneous checkout is throttled (HTTP 429) and the site retries it a moment later.
+  Checkout:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .build # only the esbuild bundle, never the backend folder (which holds .env)
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables: { ROUTES: checkout } # merged with Globals
+      Timeout: 30
       FunctionUrlConfig:
         AuthType: NONE
 
 Outputs:
   ApiUrl:
-    Description: Put this in site/js/config.js as apiBase
+    Description: Catalog/quote/signup Function URL (CloudFront routes /api/* here)
     Value: !GetAtt ApiUrl.FunctionUrl
+  CheckoutUrl:
+    Description: Checkout Function URL (CloudFront routes /api/checkout here)
+    Value: !GetAtt CheckoutUrl.FunctionUrl

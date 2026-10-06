@@ -1,5 +1,5 @@
 import { config } from "./config.js";
-import { addToCart, getCart, setQuantity, clearCart, cartCount, money } from "./cart.js";
+import { addToCart, getCart, setQuantity, updateCart, clearCart, cartCount, lineMax, money } from "./cart.js";
 import "./cart-badge.js";
 import "./signup.js";
 
@@ -21,12 +21,21 @@ const say = (text, kind) => {
 const announce = (text) => { announcer.textContent = ""; setTimeout(() => { announcer.textContent = text; }, 50); };
 const items = (n) => `${n} ${n === 1 ? "item" : "items"}`;
 
+// ---- products and stock ---------------------------------------------------------------------
+// variation id -> { stock: number | null (no limit), name } from the latest catalog.
+const stockById = new Map();
+const cardSyncs = new Set(); // each product card's "refresh my button and Sold label"
+const inCart = (id) => getCart().find((l) => l.variationId === id)?.quantity ?? 0;
+
 async function renderProducts() {
   const box = $("#products");
   try {
     const res = await api("/api/catalog");
     if (!res.ok) throw new Error();
     const { items } = await res.json();
+    for (const item of items) for (const v of item.variations)
+      stockById.set(v.id, { stock: v.stock ?? null, name: item.variations.length > 1 ? `${item.name} (${v.name})` : item.name });
+    reconcileCart();
     if (!items.length) { box.innerHTML = '<p class="empty">Nothing is listed right now. Check back soon!</p>'; return; }
     box.replaceChildren(...items.map(productCard));
   } catch {
@@ -36,38 +45,90 @@ async function renderProducts() {
   }
 }
 
+// Show (and announce) why something left the cart.
+function notice(text) {
+  const el = $("#cart-notice");
+  el.textContent = text; el.hidden = !text;
+  if (text) announce(text);
+}
+
+// Drop sold pieces from a cart saved earlier, and refresh each line's stock limit.
+function reconcileCart() {
+  const gone = [];
+  updateCart((lines) => lines.map((l) => {
+    const s = stockById.get(l.variationId);
+    if (!s || s.stock === 0) { gone.push(s?.name ?? l.itemName); return { ...l, quantity: 0 }; }
+    const max = s.stock ?? undefined;
+    return { ...l, max, quantity: Math.min(l.quantity, lineMax({ max })) };
+  }));
+  if (gone.length) notice(`${gone.join(" and ")} ${gone.length > 1 ? "have" : "has"} sold and ${gone.length > 1 ? "were" : "was"} removed from your cart.`);
+}
+
+// Called when the server says pieces just sold (from the tax lookup or at checkout).
+function markSold(ids, message) {
+  for (const id of ids) { const s = stockById.get(id); if (s) s.stock = 0; }
+  for (const sync of cardSyncs) sync();
+  updateCart((lines) => lines.filter((l) => !ids.includes(l.variationId)));
+  notice(`${message} ${ids.length > 1 ? "They were" : "It was"} removed from your cart.`);
+}
+
 function productCard(item) {
   const card = document.createElement("article");
   card.className = "card";
-  const media = item.image
+  const media = document.createElement("div");
+  media.className = "media";
+  media.append(item.image
     ? Object.assign(document.createElement("img"), { src: item.image, alt: item.name, loading: "lazy", decoding: "async" })
-    : Object.assign(document.createElement("div"), { className: "ph" });
+    : Object.assign(document.createElement("div"), { className: "ph" }));
+  const soldBadge = Object.assign(document.createElement("span"), { className: "sold-badge", textContent: "Sold" });
+  media.append(soldBadge);
   const body = document.createElement("div");
   body.className = "card-body";
   const h = document.createElement("h3"); h.textContent = item.name;
   const p = document.createElement("p"); p.textContent = item.description;
 
+  const stock = (v) => stockById.get(v.id)?.stock ?? null;
   const sel = document.createElement("select");
   sel.setAttribute("aria-label", `Option for ${item.name}`);
   for (const v of item.variations) sel.add(new Option(`${v.name} · ${money(v.price, v.currency)}`, v.id));
   sel.hidden = item.variations.length < 2;
 
   const price = document.createElement("span"); price.className = "price";
-  const btn = Object.assign(document.createElement("button"), { className: "btn", textContent: "Add to cart", type: "button" });
-  btn.setAttribute("aria-label", `Add ${item.name} to cart`);
-  const sync = () => { price.textContent = money(item.variations.find((v) => v.id === sel.value).price); };
-  sel.addEventListener("change", sync); sync();
+  const btn = Object.assign(document.createElement("button"), { className: "btn", type: "button" });
+  const selected = () => item.variations.find((v) => v.id === sel.value);
+  // Button reads Add to cart / In cart (one-of-a-kind already added) / Sold.
+  const sync = () => {
+    const v = selected();
+    const left = stock(v);
+    const allSold = item.variations.every((x) => stock(x) === 0);
+    card.classList.toggle("is-sold", allSold);
+    soldBadge.hidden = !allSold;
+    for (const [n, opt] of [...sel.options].entries()) {
+      const vv = item.variations[n];
+      opt.textContent = `${vv.name} · ${money(vv.price, vv.currency)}${stock(vv) === 0 ? " · Sold" : ""}`;
+    }
+    price.textContent = money(v.price);
+    const full = left !== null && inCart(v.id) >= left;
+    btn.disabled = left === 0 || full;
+    btn.textContent = left === 0 ? "Sold" : full ? "In cart" : "Add to cart";
+    btn.setAttribute("aria-label", left === 0 ? `${item.name} is sold` : full ? `${item.name} is in your cart` : `Add ${item.name} to cart`);
+  };
+  cardSyncs.add(sync);
+  sel.addEventListener("change", sync);
   btn.addEventListener("click", () => {
-    const v = item.variations.find((x) => x.id === sel.value);
-    addToCart({ variationId: v.id, itemName: item.name, variationName: item.variations.length > 1 ? v.name : "", price: v.price });
-    announce(`Added ${item.name} to cart. Cart has ${items(cartCount())}.`);
+    const v = selected();
+    notice("");
+    const added = addToCart({ variationId: v.id, itemName: item.name, variationName: item.variations.length > 1 ? v.name : "", price: v.price, max: stock(v) ?? undefined });
+    announce(added ? `Added ${item.name} to cart. Cart has ${items(cartCount())}.` : `${item.name} is already in your cart.`);
   });
+  sync();
 
   const row = document.createElement("div"); row.className = "row"; row.append(price, btn);
   body.append(h, p, sel, row);
   card.append(media, body);
   return card;
 }
+document.addEventListener("cart-changed", () => { for (const sync of cardSyncs) sync(); });
 
 const isShipping = () => form.fulfillment.value === "shipping";
 const shipSeparately = () => isShipping() && !form.shipSame.checked;
@@ -105,9 +166,20 @@ function renderCart() {
       };
       return b;
     };
-    const n = document.createElement("span"); n.textContent = l.quantity;
-    n.setAttribute("aria-label", `Quantity ${l.quantity}`);
-    qty.append(mk("−", "dec", l.quantity - 1), n, mk("+", "inc", Math.min(10, l.quantity + 1)));
+    if (lineMax(l) === 1) {
+      // One-of-a-kind: nothing to count, just a way to take it out.
+      const rm = Object.assign(document.createElement("button"), { type: "button", textContent: "Remove", className: "link-btn" });
+      rm.dataset.id = l.variationId; rm.dataset.act = "remove";
+      rm.setAttribute("aria-label", `Remove ${name} from cart`);
+      rm.onclick = () => { setQuantity(l.variationId, 0); announce(`${name} removed from cart`); };
+      qty.append(rm);
+    } else {
+      const n = document.createElement("span"); n.textContent = l.quantity;
+      n.setAttribute("aria-label", `Quantity ${l.quantity}`);
+      const plus = mk("+", "inc", l.quantity + 1);
+      plus.disabled = l.quantity >= lineMax(l);
+      qty.append(mk("−", "dec", l.quantity - 1), n, plus);
+    }
     const amt = document.createElement("div"); amt.textContent = money(l.price * l.quantity);
     row.append(label, qty, amt);
     return row;
@@ -131,6 +203,10 @@ function renderCart() {
 // when the customer unticks "Ship to my billing address".
 function syncAddressSections() {
   $("#shipping").hidden = !isShipping();
+  $("#pickup-info").hidden = isShipping();
+  $("#note-hint").textContent = isShipping()
+    ? "Gift message, delivery notes, or anything else I should know"
+    : "How to reach you to schedule pickup, or anything else I should know";
   $("#ship-fields").hidden = !shipSeparately();
   for (const input of form.querySelectorAll("[data-ship]")) input.required = shipSeparately();
 }
@@ -192,6 +268,7 @@ function requestQuote() {
       });
       const out = await res.json();
       if (seq !== quoteSeq) return; // a newer cart change is already being looked up
+      if (res.status === 409 && out.sold) { quoting = false; markSold(out.sold, out.errors[0]); return; }
       if (!res.ok) throw new Error(out.errors?.[0]);
       quote = { key, ...out }; quoting = false;
       showQuote("ok", quote);
@@ -235,7 +312,10 @@ function validate() {
   if (first) { say("Please fix the highlighted fields.", "err"); first.focus(); }
   return !first;
 }
-form.addEventListener("input", (e) => { if (e.target.getAttribute("aria-invalid")) clearError(e.target); });
+form.addEventListener("input", (e) => {
+  if (e.target.getAttribute("aria-invalid")) clearError(e.target);
+  if (e.target.name === "note") $("#note-count").textContent = `${e.target.value.length} of 500 characters`;
+});
 
 // The idempotency key survives a reload mid-payment; fall back to memory if storage is blocked.
 let idemMemory = null;
@@ -269,6 +349,18 @@ async function initSquare() {
 
 const address = (f, p) => ({ line1: f.get(`${p}Line1`), line2: f.get(`${p}Line2`), city: f.get(`${p}City`), state: f.get(`${p}State`), postalCode: f.get(`${p}Zip`) });
 
+// Checkout handles one order at a time; if another is finishing, the request is turned away with
+// HTTP 429 before anything runs, so it is safe to wait a moment and send it again.
+async function postCheckout(body) {
+  const init = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+  for (let attempt = 1; ; attempt++) {
+    const res = await api("/api/checkout", init);
+    if (res.status !== 429 || attempt >= 10) return res;
+    say("Finishing another order, one moment…", "ok");
+    await new Promise((ok) => setTimeout(ok, 800 + attempt * 400 + Math.random() * 400));
+  }
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!card || quoting || !validate()) return;
@@ -293,19 +385,30 @@ form.addEventListener("submit", async (e) => {
       idempotencyKey: idemKey(),
       lines: getCart().map((l) => ({ variationId: l.variationId, quantity: l.quantity })),
       name: f.get("name"), email: f.get("email"), phone: f.get("phone"), fulfillment: f.get("fulfillment"),
+      note: f.get("note"),
       billing,
       shipping: !isShipping() ? undefined
         : shipSeparately() ? { name: f.get("shipName"), ...address(f, "ship") } : { name: f.get("name"), ...billing },
       expectedTotal: quote?.total,
     };
-    const res = await api("/api/checkout", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const res = await postCheckout(body);
     const out = await res.json();
+    if (res.status === 409 && out.sold) {
+      // A piece sold while they were paying; the card was not charged.
+      resetIdem(); say("", "ok"); markSold(out.sold, `${out.errors[0]}${out.notCharged ? " Your card was not charged." : ""}`); updatePayButton();
+      return;
+    }
     if (res.status === 409 && Number.isInteger(out.total)) {
       // Price or tax changed since it was shown: drop the old quote and look it up again.
       quote = null;
       requestQuote();
     }
     if (!res.ok) throw new Error(out.errors?.join(" ") || "Payment failed.");
+    // What was just bought is no longer for sale here either (one-of-a-kind pieces show Sold).
+    for (const l of getCart()) {
+      const s = stockById.get(l.variationId);
+      if (s && s.stock !== null) s.stock = Math.max(0, s.stock - l.quantity);
+    }
     clearCart(); resetIdem();
     form.hidden = true;
     $("#cart-lines").innerHTML = "";

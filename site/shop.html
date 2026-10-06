@@ -16,6 +16,7 @@
   <main id="main" class="wrap">
     <section>
       <h1 class="page-title">Shop</h1>
+      <p class="lede shop-lede">Food safe with lead-free glazes, dishwasher and microwave safe. Not for the oven, stovetop or open flame. <a href="/care.html">Care &amp; use</a></p>
       <div class="shop-layout">
         <div>
           <div id="products" class="grid" aria-busy="true">
@@ -27,6 +28,7 @@
         <aside class="panel" id="cart" aria-label="Cart and checkout">
           <h2 class="panel-title" id="cart-title" tabindex="-1">Your cart</h2>
           <p id="announce" class="vh" aria-live="polite"></p>
+          <p id="cart-notice" class="msg err" hidden></p>
           <div id="cart-lines"><p class="empty">Your cart is empty.</p></div>
 
           <form id="checkout" hidden novalidate>
@@ -45,6 +47,11 @@
                 <label><input type="radio" name="fulfillment" value="pickup" checked> Local pickup (Tacoma)</label>
                 <label><input type="radio" name="fulfillment" value="shipping"> Shipping (US)</label>
               </div>
+              <p id="pickup-info" class="muted small">
+                Orders for pickup can be scheduled {{pickupEmail}}, or leave a note in the order note below on how to
+                contact you. Please allow one to two business days for a pickup window to be available.
+              </p>
+              <p class="muted small">{{policiesShopLink}}</p>
             </fieldset>
 
             <fieldset>
@@ -77,6 +84,13 @@
             </fieldset>
 
             <fieldset>
+              <legend>Order note (optional)</legend>
+              <label class="field"><span id="note-hint">How to reach you to schedule pickup, or anything else I should know</span>
+                <textarea name="note" rows="3" maxlength="500" aria-describedby="note-count"></textarea></label>
+              <small class="muted" id="note-count">0 of 500 characters</small>
+            </fieldset>
+
+            <fieldset>
               <legend>Payment</legend>
               <div id="card-container"></div>
             </fieldset>
@@ -84,7 +98,7 @@
             <div id="status" role="status"></div>
             <div id="error" role="alert"></div>
             <button class="btn wide" id="pay" type="submit" disabled>Pay</button>
-            <p class="muted small">Payments are processed securely by Square.</p>
+            <p class="muted small">Payments are processed securely by Square. Before you buy, see <a href="/care.html">care &amp; use</a>.</p>
           </form>
         </aside>
       </div>

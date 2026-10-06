@@ -12,9 +12,14 @@ Parameters:
     Type: String
     Default: ""
     Description: Host of the Lambda Function URL (e.g. abc123.lambda-url.us-east-1.on.aws). Empty = no /api route yet.
+  CheckoutDomain:
+    Type: String
+    Default: ""
+    Description: Host of the checkout Function URL (one order at a time). Empty = /api/checkout goes to ApiDomain.
 
 Conditions:
   HasApi: !Not [!Equals [!Ref ApiDomain, ""]]
+  HasCheckout: !Not [!Equals [!Ref CheckoutDomain, ""]]
 
 Resources:
   SiteBucket:
@@ -111,22 +116,40 @@ Resources:
               DomainName: !Ref ApiDomain
               CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
             - !Ref AWS::NoValue
+          - !If
+            - HasCheckout
+            - Id: checkout
+              DomainName: !Ref CheckoutDomain
+              CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+            - !Ref AWS::NoValue
         DefaultCacheBehavior:
           TargetOriginId: site
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
           ResponseHeadersPolicyId: !Ref SecurityHeaders
-        CacheBehaviors: !If
-          - HasApi
-          - - PathPattern: /api/*
+        # Order matters: CloudFront uses the first matching pattern, so /api/checkout comes before /api/*.
+        CacheBehaviors:
+          - !If
+            - HasCheckout
+            - PathPattern: /api/checkout
+              TargetOriginId: checkout
+              ViewerProtocolPolicy: https-only
+              AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
+              CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
+              OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+              ResponseHeadersPolicyId: !Ref SecurityHeaders
+            - !Ref AWS::NoValue
+          - !If
+            - HasApi
+            - PathPattern: /api/*
               TargetOriginId: api
               ViewerProtocolPolicy: https-only
               AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
               CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
               OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
               ResponseHeadersPolicyId: !Ref SecurityHeaders
-          - !Ref AWS::NoValue
+            - !Ref AWS::NoValue
         CustomErrorResponses:
           - { ErrorCode: 403, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }
           - { ErrorCode: 404, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }

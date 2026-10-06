@@ -65,6 +65,22 @@ const packaged = path.join(BACKEND, "packaged.yaml");
 aws("cloudformation", "package", "--template-file", path.join(BACKEND, "template.yaml"),
   "--s3-bucket", artifacts, "--s3-prefix", API_STACK, "--output-template-file", packaged);
 
+// Guard: every uploaded code package must be the small bundle. A big one means the template made
+// `package` zip the whole backend folder (with .env); delete it and stop before anything deploys.
+step("Checking packaged code");
+const uris = [...new Set([...readFileSync(packaged, "utf8").matchAll(/CodeUri:\s*(s3:\/\/\S+)/g)].map((m) => m[1]))];
+if (!uris.length) throw new Error("No packaged CodeUri found; refusing to deploy.");
+for (const uri of uris) {
+  const [, bucketName, key] = uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
+  const size = Number(aws("s3api", "head-object", "--bucket", bucketName, "--key", key, "--query", "ContentLength", "--output", "text"));
+  if (size > 3 * 1024 * 1024) {
+    aws("s3", "rm", uri);
+    rmSync(packaged, { force: true });
+    throw new Error(`Packaged code ${uri} is ${(size / 1048576).toFixed(1)} MB, so it is not just the bundle (it may contain backend/.env). Deleted it; fix CodeUri in backend/template.yaml.`);
+  }
+  console.log(`${uri}: ${(size / 1024).toFixed(0)} KB ok`);
+}
+
 step(`Deploying ${API_STACK} (${squareEnv})`);
 const params = {
   SquareAccessToken: token,
@@ -83,15 +99,16 @@ try {
   rmSync(packaged, { force: true });
 }
 
-const apiUrl = JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", API_STACK,
-  "--query", "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue", "--output", "json"))[0];
-const apiHost = new URL(apiUrl).host;
-console.log(`API: ${apiUrl}`);
+const apiOutputs = Object.fromEntries(JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", API_STACK,
+  "--query", "Stacks[0].Outputs", "--output", "json")).map((o) => [o.OutputKey, o.OutputValue]));
+const apiHost = new URL(apiOutputs.ApiUrl).host;
+const checkoutHost = new URL(apiOutputs.CheckoutUrl).host;
+console.log(`API: ${apiOutputs.ApiUrl}\nCheckout: ${apiOutputs.CheckoutUrl}`);
 
 // --- route /api/* through CloudFront --------------------------------------------------------
-step(`Routing /api/* on ${SITE_STACK} to ${apiHost}`);
+step(`Routing /api/* on ${SITE_STACK} to ${apiHost}, /api/checkout to ${checkoutHost}`);
 aws("cloudformation", "deploy", "--template-file", path.join(ROOT, "deploy", "site.yaml"), "--stack-name", SITE_STACK,
-  "--no-fail-on-empty-changeset", "--parameter-overrides", `ApiDomain=${apiHost}`);
+  "--no-fail-on-empty-changeset", "--parameter-overrides", `ApiDomain=${apiHost}`, `CheckoutDomain=${checkoutHost}`);
 const site = JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", SITE_STACK,
   "--query", "Stacks[0].Outputs[?OutputKey=='DistributionDomain'].OutputValue", "--output", "json"))[0];
 

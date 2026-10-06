@@ -77,3 +77,51 @@ test("quote validates the cart before calling Square", async () => {
   assert.match(res.body, /Cart/);
   assert.equal((await call("POST", "/api/quote", { lines: [{ variationId: "v", quantity: 1 }], fulfillment: "drone" })).statusCode, 400);
 });
+
+import { stockOf, soldLines } from "../src/handler.mjs";
+
+const info = new Map([
+  ["open", { name: "Untracked mug", tracked: false, soldOut: false }],
+  ["one", { name: "Celadon bowl", tracked: true, soldOut: false }],
+  ["gone", { name: "Tenmoku jar", tracked: true, soldOut: false }],
+  ["flagged", { name: "Vase", tracked: false, soldOut: true }],
+  ["nocount", { name: "New piece", tracked: true, soldOut: false }],
+]);
+const counts = new Map([["one", 1], ["gone", 0]]);
+
+test("stock: untracked is unlimited, tracked uses the count, sold-out switch wins", () => {
+  assert.equal(stockOf(info, counts, "open"), null);
+  assert.equal(stockOf(info, counts, "one"), 1);
+  assert.equal(stockOf(info, counts, "gone"), 0);
+  assert.equal(stockOf(info, counts, "flagged"), 0);
+  assert.equal(stockOf(info, counts, "nocount"), 0); // tracked but never counted
+  assert.equal(stockOf(info, counts, "unknown"), 0);
+});
+
+test("soldLines names lines that can't be filled", () => {
+  const lines = [{ variationId: "open", quantity: 5 }, { variationId: "one", quantity: 1 }, { variationId: "gone", quantity: 1 }];
+  assert.deepEqual(soldLines(lines, info, counts), [{ variationId: "gone", name: "Tenmoku jar" }]);
+  assert.deepEqual(soldLines([{ variationId: "one", quantity: 2 }], info, counts).map((x) => x.name), ["Celadon bowl"]);
+  assert.deepEqual(soldLines([{ variationId: "one", quantity: 1 }], info, counts), []);
+});
+
+import { recordSale, applyRecentSales } from "../src/handler.mjs";
+
+test("a sale is subtracted until Square's count includes it, never twice", () => {
+  _resetLimits();
+  const t0 = Date.parse("2026-10-05T23:17:00Z");
+  recordSale([{ variationId: "bowl", quantity: 1 }], t0 + 1000);
+  // Square's count was calculated before the sale: still says 1 -> treat as 0
+  assert.equal(applyRecentSales(new Map([["bowl", 1]]), new Map([["bowl", t0]]), t0 + 2000).get("bowl"), 0);
+  // a few seconds later Square's count includes the sale (0, calculated after it) -> stays 0, not -1
+  assert.equal(applyRecentSales(new Map([["bowl", 0]]), new Map([["bowl", t0 + 5000]]), t0 + 6000).get("bowl"), 0);
+  // other pieces are untouched
+  assert.equal(applyRecentSales(new Map([["jar", 1]]), new Map([["jar", t0]]), t0 + 2000).get("jar"), 1);
+});
+
+test("sale memory expires after 10 minutes", () => {
+  _resetLimits();
+  const t0 = Date.parse("2026-10-05T23:17:00Z");
+  recordSale([{ variationId: "bowl", quantity: 1 }], t0);
+  assert.equal(applyRecentSales(new Map([["bowl", 1]]), new Map([["bowl", t0 - 1]]), t0 + 11 * 60_000).get("bowl"), 1);
+});
