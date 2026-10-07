@@ -57,16 +57,22 @@ for (const width of [320, 360, 390, 412, 700, 768]) {
         span.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;font-size:40px";
         document.body.append(span);
         const widthIn = (family) => ((span.style.fontFamily = family), span.getBoundingClientRect().width);
-        const realSerif = ['"Iowan Old Style"', '"Palatino Linotype"', "Palatino", "Georgia"].some(
-          (f) => widthIn(`${f}, monospace`) !== widthIn("monospace"),
-        );
+        const realSerif = [
+          '"Iowan Old Style"',
+          '"Palatino Linotype"',
+          "Palatino",
+          "P052",
+          '"URW Palladio L"',
+          '"TeX Gyre Pagella"',
+          "Georgia",
+        ].some((f) => widthIn(`${f}, monospace`) !== widthIn("monospace"));
         span.remove();
         return { h1: box(document.querySelector(".hero-text h1")), p: box(document.querySelector(".hero-text p")), realSerif };
       });
       // The sizing rule, independent of which fonts this machine has.
       expect(m.h1.size * 12.2).toBeLessThanOrEqual(m.h1.width);
       expect(m.p.size * 15.5).toBeLessThanOrEqual(m.p.width);
-      // The real rendering, where a real-device serif is installed (not on Linux CI, which has DejaVu).
+      // The real rendering, where one of the serifs we ask for is installed (skipped where only a wide default like DejaVu is).
       if (m.realSerif) expect([m.h1.lines, m.p.lines]).toEqual([2, 2]);
     });
   });
