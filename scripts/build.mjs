@@ -25,7 +25,7 @@ const SITE_URL = (process.env.SITE_URL ?? "").replace(/\/$/, "");
 const STAGE = currentStage([]);
 const INDEXABLE = STAGE.indexable;
 const SITE_NAME = "Updraft Pottery Studio";
-const BG = { light: "#f6f1ea", dark: "#1b1714" };
+const BG = { light: "#f7f7f3", dark: "#141816" };
 
 // Every page is in the menu, grouped under three dropdowns. Each is a <details>, so it opens by tap,
 // click or keyboard even without JavaScript (menu.js adds closing on Escape or a click elsewhere).
