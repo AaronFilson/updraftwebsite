@@ -26,20 +26,53 @@ for (const width of widths) {
 
 test.describe("phone layout", () => {
   test.use({ viewport: { width: 390, height: 844 } });
-  test("nav fits one line with the short Glossary label, and the headline breaks at the comma", async ({ page }) => {
+  test("nav fits one line with the short Glossary label", async ({ page }) => {
     await page.goto("/");
     const nav = await page.evaluate(() => ({
       rows: new Set([...document.querySelectorAll("nav a")].map((a) => Math.round(a.getBoundingClientRect().top))).size,
       glossary: document.querySelector('nav a[href="/terms.html"]').innerText,
     }));
     expect(nav).toEqual({ rows: 1, glossary: "Glossary" });
-    const lines = await page.evaluate(() => {
-      const h = document.querySelector(".hero h1");
-      return Math.round(h.getBoundingClientRect().height / parseFloat(getComputedStyle(h).lineHeight));
-    });
-    expect(lines).toBe(2);
   });
 });
+
+// The home headline and subtitle each break only at their <br> (after "hand," and before "from").
+// Widest real-device fonts, as width / font-size: "Pottery shaped by hand," 12.2 (Georgia) and
+// "Functional and sculptural ceramics" 15.5 (Roboto, Android). The CSS caps the sizes to fit those.
+for (const width of [320, 360, 390, 412, 700, 768]) {
+  test.describe(`home headline at ${width}px`, () => {
+    test.use({ viewport: { width, height: 900 } });
+    test("each line fits whole, so it breaks only where intended", async ({ page }) => {
+      await page.goto("/");
+      const m = await page.evaluate(() => {
+        const box = (el) => {
+          const cs = getComputedStyle(el);
+          return {
+            size: parseFloat(cs.fontSize),
+            width: el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+            lines: Math.round(el.getBoundingClientRect().height / parseFloat(cs.lineHeight)),
+          };
+        };
+        // Is one of the serif fonts the headline asks for (before the generic fallback) installed?
+        const span = document.createElement("span");
+        span.textContent = "Pottery shaped by hand,";
+        span.style.cssText = "position:absolute;visibility:hidden;white-space:nowrap;font-size:40px";
+        document.body.append(span);
+        const widthIn = (family) => ((span.style.fontFamily = family), span.getBoundingClientRect().width);
+        const realSerif = ['"Iowan Old Style"', '"Palatino Linotype"', "Palatino", "Georgia"].some(
+          (f) => widthIn(`${f}, monospace`) !== widthIn("monospace"),
+        );
+        span.remove();
+        return { h1: box(document.querySelector(".hero-text h1")), p: box(document.querySelector(".hero-text p")), realSerif };
+      });
+      // The sizing rule, independent of which fonts this machine has.
+      expect(m.h1.size * 12.2).toBeLessThanOrEqual(m.h1.width);
+      expect(m.p.size * 15.5).toBeLessThanOrEqual(m.p.width);
+      // The real rendering, where a real-device serif is installed (not on Linux CI, which has DejaVu).
+      if (m.realSerif) expect([m.h1.lines, m.p.lines]).toEqual([2, 2]);
+    });
+  });
+}
 
 test("the 404 page has a working skip link and the right status", async ({ page, browserName }) => {
   const res = await page.goto("/missing.html");

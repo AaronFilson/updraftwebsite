@@ -98,6 +98,12 @@ label.field { display: grid; gap: .25rem; font-size: .95rem; }
 /* home hero: text beside the slideshow on wide screens, photo first when stacked */
 .hero-split { display: grid; gap: clamp(1.5rem, 4vw, 3rem); align-items: center; padding-block: clamp(1.5rem, 5vw, 4.5rem); }
 .hero-split h1 { font-size: clamp(1.9rem, 3.7vw, 3.1rem); }
+/* Each line (split by <br>) must fit its column whole, or it breaks mid-phrase. Widest real-device
+   fonts, in em: "Pottery shaped by hand," 12.2 (Georgia; Noto Serif on Android 11.7) and "Functional
+   and sculptural ceramics" 15.5 (Roboto). So cap the sizes by the column's width (cqi), with a margin. */
+.hero-text { container-type: inline-size; }
+.hero-split h1 { font-size: min(clamp(1.9rem, 3.7vw, 3.1rem), 100cqi / 12.4); }
+.hero-split .hero-text > p:first-of-type { font-size: min(1.25rem, 100cqi / 15.8); }
 .hero-split .hero-show { order: -1; }
 @media (min-width: 700px) {
   .hero-split { grid-template-columns: 1.15fr 1fr; }
