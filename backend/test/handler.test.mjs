@@ -2,8 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handler, _resetLimits } from "../src/handler.mjs";
 
-const call = (method, path, body) =>
-  handler({ requestContext: { http: { method } }, rawPath: path, body: body && JSON.stringify(body) });
+const call = (method, path, body) => handler({ requestContext: { http: { method } }, rawPath: path, body: body && JSON.stringify(body) });
 
 test("unknown route is 404", async () => {
   assert.equal((await call("GET", "/nope")).statusCode, 404);
@@ -17,15 +16,33 @@ test("checkout rejects an empty cart without touching Square", async () => {
 
 test("checkout requires an address for shipping", async () => {
   const res = await call("POST", "/api/checkout", {
-    lines: [{ variationId: "v", quantity: 1 }], sourceId: "x", email: "a@b.co", name: "A", fulfillment: "shipping",
+    lines: [{ variationId: "v", quantity: 1 }],
+    sourceId: "x",
+    email: "a@b.co",
+    name: "A",
+    fulfillment: "shipping",
   });
   assert.equal(res.statusCode, 400);
   assert.match(res.body, /shipping address/);
 });
 
-test("malformed JSON is 400", async () => {
-  const res = await handler({ requestContext: { http: { method: "POST" } }, rawPath: "/api/checkout", body: "{" });
-  assert.equal(res.statusCode, 400);
+test("malformed or odd-shaped bodies are 400, never logged as UNHANDLED (which would alarm)", async (t) => {
+  const logged = [];
+  t.mock.method(console, "error", (...args) => logged.push(args.join(" ")));
+  const raw = (path, body) => handler({ requestContext: { http: { method: "POST" } }, rawPath: path, body });
+  const cases = [
+    ["/api/checkout", "{"],
+    ["/api/quote", "null"],
+    ["/api/quote", "123"],
+    ["/api/quote", "[]"],
+    ["/api/quote", '{"lines":5,"fulfillment":"pickup"}'],
+    ["/api/quote", '{"lines":{},"fulfillment":"pickup"}'],
+    ["/api/quote", '{"lines":[null],"fulfillment":"pickup"}'],
+    ["/api/checkout", '{"lines":[null,1],"fulfillment":"pickup"}'],
+    ["/api/subscribe", "null"],
+  ];
+  for (const [path, body] of cases) assert.equal((await raw(path, body)).statusCode, 400, `${path} ${body}`);
+  assert.deepEqual(logged, []);
 });
 
 test("subscribe rejects an invalid email without touching Square", async () => {
@@ -41,9 +58,12 @@ test("subscribe quietly accepts bot submissions without touching Square", async 
 
 test("subscribe limits repeated attempts from one IP", async () => {
   _resetLimits();
-  const from = (ip) => handler({
-    requestContext: { http: { method: "POST", sourceIp: ip } }, rawPath: "/api/subscribe", body: JSON.stringify({ email: "bad" }),
-  });
+  const from = (ip) =>
+    handler({
+      requestContext: { http: { method: "POST", sourceIp: ip } },
+      rawPath: "/api/subscribe",
+      body: JSON.stringify({ email: "bad" }),
+    });
   for (let i = 0; i < 5; i++) assert.equal((await from("1.2.3.4")).statusCode, 400);
   assert.equal((await from("1.2.3.4")).statusCode, 429);
   assert.equal((await from("5.6.7.8")).statusCode, 400); // other visitors unaffected
@@ -87,7 +107,10 @@ const info = new Map([
   ["flagged", { name: "Vase", tracked: false, soldOut: true }],
   ["nocount", { name: "New piece", tracked: true, soldOut: false }],
 ]);
-const counts = new Map([["one", 1], ["gone", 0]]);
+const counts = new Map([
+  ["one", 1],
+  ["gone", 0],
+]);
 
 test("stock: untracked is unlimited, tracked uses the count, sold-out switch wins", () => {
   assert.equal(stockOf(info, counts, "open"), null);
@@ -99,9 +122,16 @@ test("stock: untracked is unlimited, tracked uses the count, sold-out switch win
 });
 
 test("soldLines names lines that can't be filled", () => {
-  const lines = [{ variationId: "open", quantity: 5 }, { variationId: "one", quantity: 1 }, { variationId: "gone", quantity: 1 }];
+  const lines = [
+    { variationId: "open", quantity: 5 },
+    { variationId: "one", quantity: 1 },
+    { variationId: "gone", quantity: 1 },
+  ];
   assert.deepEqual(soldLines(lines, info, counts), [{ variationId: "gone", name: "Tenmoku jar" }]);
-  assert.deepEqual(soldLines([{ variationId: "one", quantity: 2 }], info, counts).map((x) => x.name), ["Celadon bowl"]);
+  assert.deepEqual(
+    soldLines([{ variationId: "one", quantity: 2 }], info, counts).map((x) => x.name),
+    ["Celadon bowl"],
+  );
   assert.deepEqual(soldLines([{ variationId: "one", quantity: 1 }], info, counts), []);
 });
 

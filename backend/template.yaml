@@ -1,18 +1,26 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Square catalog + checkout API for Updraft Pottery Studio
+Description: >
+  Square catalog + checkout API for Updraft Pottery Studio (one stack per stage: updraft-api,
+  updraft-staging-api). Deployed by scripts/deploy-api.mjs from deploy/stages.json.
 
 Parameters:
-  SquareAccessToken: { Type: String, NoEcho: true }
+  SquareTokenParam: { Type: String, Description: "SSM SecureString holding the Square access token, e.g. /updraft/prod/square-access-token" }
   SquareLocationId: { Type: String }
   SquareEnv: { Type: String, Default: sandbox, AllowedValues: [sandbox, production] }
   ShippingCents: { Type: String, Default: "0" }
-  SiteOrigin: { Type: String, Description: "e.g. https://updraftpottery.com (used for CORS)" }
+  SiteOrigin: { Type: String, Description: "e.g. https://updraftpotterystudio.com (used for CORS)" }
   ApiConcurrency: { Type: Number, Default: 5, Description: "Max concurrent API invocations (abuse cap). 0 = no reservation (needed on new accounts with low Lambda limits)" }
   NewsletterGroupId: { Type: String, Default: "", Description: "Optional Square customer group id that website signups are added to" }
+  SsmReadPolicyArn:
+    Type: String
+    Default: arn:aws:iam::724654236968:policy/updraft-lambda-ssm-read
+    Description: Admin-created managed policy allowing ssm:GetParameter on /updraft/*
+  AlertEmail: { Type: String, Default: "", Description: "Where alarms are emailed (SNS asks to confirm once). Empty = no alarms." }
 
 Conditions:
   CapConcurrency: !Not [!Equals [!Ref ApiConcurrency, 0]]
+  HasAlerts: !Not [!Equals [!Ref AlertEmail, ""]]
 
 # CodeUri must stay on each function, not here: `aws cloudformation package` ignores Globals and
 # would otherwise zip the whole backend folder, .env included. deploy-api.mjs also checks for that.
@@ -24,7 +32,7 @@ Globals:
     Timeout: 20
     Environment:
       Variables:
-        SQUARE_ACCESS_TOKEN: !Ref SquareAccessToken
+        SQUARE_TOKEN_PARAM: !Ref SquareTokenParam
         SQUARE_LOCATION_ID: !Ref SquareLocationId
         SQUARE_ENV: !Ref SquareEnv
         SHIPPING_CENTS: !Ref ShippingCents
@@ -32,16 +40,28 @@ Globals:
         NEWSLETTER_GROUP_ID: !Ref NewsletterGroupId
 
 Resources:
+  # Log groups owned by the stack (30-day retention), so the alarm metric filters below can attach to them.
+  ApiLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub "/updraft/${AWS::StackName}/api", RetentionInDays: 30 }
+  CheckoutLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub "/updraft/${AWS::StackName}/checkout", RetentionInDays: 30 }
+
   # Catalog, tax quotes and signups.
   Api:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .build # only the esbuild bundle, never the backend folder (which holds .env)
+      Policies: [!Ref SsmReadPolicyArn] # read the token from SSM (SAM adds basic logging); not allowed in Globals
       ReservedConcurrentExecutions: !If [CapConcurrency, !Ref ApiConcurrency, !Ref AWS::NoValue]
+      LoggingConfig: { LogGroup: !Ref ApiLogs }
       Environment:
         Variables: { ROUTES: "catalog,quote,subscribe" } # merged with Globals; no checkout here
+      # Only CloudFront can call it (it signs requests: origin access control in deploy/site.yaml). Keep
+      # this literal: SAM only adds the public-access permissions for a literal NONE, not a parameter.
       FunctionUrlConfig:
-        AuthType: NONE
+        AuthType: AWS_IAM
 
   # Checkout runs one order at a time, so its in-memory record of pieces it has just sold is seen by
   # the next checkout even before Square's stock count catches up (that count lags a few seconds).
@@ -50,12 +70,109 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: .build # only the esbuild bundle, never the backend folder (which holds .env)
+      Policies: [!Ref SsmReadPolicyArn] # read the token from SSM (SAM adds basic logging); not allowed in Globals
       ReservedConcurrentExecutions: 1
+      Timeout: 30
+      LoggingConfig: { LogGroup: !Ref CheckoutLogs }
       Environment:
         Variables: { ROUTES: checkout } # merged with Globals
-      Timeout: 30
       FunctionUrlConfig:
-        AuthType: NONE
+        AuthType: AWS_IAM # see Api
+
+  # ---- alarms, emailed through SNS ------------------------------------------------------------
+  Alerts:
+    Type: AWS::SNS::Topic
+    Condition: HasAlerts
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-alerts"
+      Subscription: [{ Protocol: email, Endpoint: !Ref AlertEmail }]
+
+  # The handler logs these markers: CHECKOUT_FAILED (a payment step failed after authorising; the
+  # hold was released), CLEANUP_FAILED (couldn't cancel an order or authorisation; look in Square),
+  # UNHANDLED (an unexpected error answered with HTTP 500).
+  CheckoutFailedMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: HasAlerts
+    Properties:
+      LogGroupName: !Ref CheckoutLogs
+      FilterPattern: '?CHECKOUT_FAILED ?CLEANUP_FAILED'
+      MetricTransformations: [{ MetricNamespace: !Sub "Updraft/${AWS::StackName}", MetricName: CheckoutProblems, MetricValue: "1", DefaultValue: 0 }]
+  ApiUnhandledMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: HasAlerts
+    Properties:
+      LogGroupName: !Ref ApiLogs
+      FilterPattern: UNHANDLED
+      MetricTransformations: [{ MetricNamespace: !Sub "Updraft/${AWS::StackName}", MetricName: Unhandled, MetricValue: "1", DefaultValue: 0 }]
+  CheckoutUnhandledMetric:
+    Type: AWS::Logs::MetricFilter
+    Condition: HasAlerts
+    Properties:
+      LogGroupName: !Ref CheckoutLogs
+      FilterPattern: UNHANDLED
+      MetricTransformations: [{ MetricNamespace: !Sub "Updraft/${AWS::StackName}", MetricName: Unhandled, MetricValue: "1", DefaultValue: 0 }]
+
+  CheckoutProblemsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlerts
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-checkout-problems"
+      AlarmDescription: A checkout failed after the card was authorised, or an order/authorisation couldn't be cancelled. Check the checkout log and Square.
+      Namespace: !Sub "Updraft/${AWS::StackName}"
+      MetricName: CheckoutProblems
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref Alerts]
+  UnhandledAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlerts
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-unhandled-errors"
+      AlarmDescription: The API answered with an unexpected error (HTTP 500).
+      Namespace: !Sub "Updraft/${AWS::StackName}"
+      MetricName: Unhandled
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref Alerts]
+  FunctionErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlerts
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-function-errors"
+      AlarmDescription: A function crashed or timed out.
+      Metrics:
+        - { Id: api, ReturnData: false, MetricStat: { Metric: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref Api }] }, Period: 300, Stat: Sum } }
+        - { Id: checkout, ReturnData: false, MetricStat: { Metric: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref Checkout }] }, Period: 300, Stat: Sum } }
+        - { Id: total, Expression: "api + checkout", Label: Errors, ReturnData: true }
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref Alerts]
+  CheckoutBusyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasAlerts
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-checkout-busy"
+      AlarmDescription: Many checkouts had to wait their turn (throttled). If this repeats, it's time for the DynamoDB lock instead of one-at-a-time checkout.
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions: [{ Name: FunctionName, Value: !Ref Checkout }]
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref Alerts]
 
 Outputs:
   ApiUrl:
@@ -64,3 +181,5 @@ Outputs:
   CheckoutUrl:
     Description: Checkout Function URL (CloudFront routes /api/checkout here)
     Value: !GetAtt CheckoutUrl.FunctionUrl
+  ApiFunction: { Value: !Ref Api }
+  CheckoutFunction: { Value: !Ref Checkout }

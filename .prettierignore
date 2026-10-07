@@ -1,0 +1,12 @@
+# Only JavaScript and JSON are formatted; HTML templates, CSS, YAML (CloudFormation) and Markdown keep their hand layout.
+*.html
+*.css
+*.yaml
+*.yml
+*.md
+dist/
+.cache/
+backend/.build/
+playwright-report/
+test-results/
+package-lock.json

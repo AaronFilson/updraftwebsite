@@ -19,7 +19,11 @@ const aws = (...args) => execFileSync("aws", args, { encoding: "utf8", stdio: ["
 const names = [`${DOMAIN}.`, `www.${DOMAIN}.`];
 const alias = (name, type, target) => ({
   Action: "UPSERT",
-  ResourceRecordSet: { Name: name, Type: type, AliasTarget: { HostedZoneId: target.zone, DNSName: target.dns, EvaluateTargetHealth: false } },
+  ResourceRecordSet: {
+    Name: name,
+    Type: type,
+    AliasTarget: { HostedZoneId: target.zone, DNSName: target.dns, EvaluateTargetHealth: false },
+  },
 });
 
 let changes;
@@ -30,8 +34,11 @@ if (rollback) {
     ...current.filter((r) => r.Type === "AAAA" && names.includes(r.Name)).map((r) => ({ Action: "DELETE", ResourceRecordSet: r })),
   ];
 } else {
-  const outputs = Object.fromEntries(JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", STACK,
-    "--query", "Stacks[0].Outputs", "--output", "json")).map((o) => [o.OutputKey, o.OutputValue]));
+  const outputs = Object.fromEntries(
+    JSON.parse(aws("cloudformation", "describe-stacks", "--stack-name", STACK, "--query", "Stacks[0].Outputs", "--output", "json")).map(
+      (o) => [o.OutputKey, o.OutputValue],
+    ),
+  );
   const cf = { zone: CLOUDFRONT_ZONE, dns: `${outputs.DistributionDomain}.` };
   changes = names.flatMap((n) => [alias(n, "A", cf), alias(n, "AAAA", cf)]);
 }
@@ -43,7 +50,9 @@ if (dry) process.exit(0);
 const file = path.join(tmpdir(), `updraft-dns-${Date.now()}.json`);
 writeFileSync(file, JSON.stringify(batch));
 try {
-  const out = JSON.parse(aws("route53", "change-resource-record-sets", "--hosted-zone-id", ZONE, "--change-batch", `file://${file}`, "--output", "json"));
+  const out = JSON.parse(
+    aws("route53", "change-resource-record-sets", "--hosted-zone-id", ZONE, "--change-batch", `file://${file}`, "--output", "json"),
+  );
   console.log(`\nSubmitted ${out.ChangeInfo.Id} (${out.ChangeInfo.Status}). Route 53 applies it within about a minute.`);
 } finally {
   rmSync(file, { force: true });

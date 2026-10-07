@@ -29,16 +29,24 @@ function show(i) {
   $(".lb-desc").textContent = a.dataset.desc ?? "";
   $(".lb-count").textContent = group.length > 1 ? `${index + 1} of ${group.length}` : "";
   // Built only when there is a file, so the page never contains an <a> without an href.
-  $(".lb-full").replaceChildren(...(a.dataset.full ? [Object.assign(document.createElement("a"), {
-    href: a.dataset.full, target: "_blank", rel: "noopener",
-    textContent: `Full size (JPG, ${a.dataset.fullSize}, opens in new tab)`,
-  })] : []));
+  $(".lb-full").replaceChildren(
+    ...(a.dataset.full
+      ? [
+          Object.assign(document.createElement("a"), {
+            href: a.dataset.full,
+            target: "_blank",
+            rel: "noopener",
+            textContent: `Full size (JPG, ${a.dataset.fullSize}, opens in new tab)`,
+          }),
+        ]
+      : []),
+  );
   // Warm the cache for the next photo so stepping through feels instant.
   if (group.length > 1) new Image().src = group[(index + 1) % group.length].href;
 }
 
 document.addEventListener("click", (e) => {
-  const a = e.target.closest("a.zoom");
+  const a = /** @type {HTMLAnchorElement | null} */ (/** @type {Element} */ (e.target).closest("a.zoom"));
   if (!a || e.metaKey || e.ctrlKey || e.shiftKey) return;
   e.preventDefault();
   group = [...(a.closest(".gallery") ?? document).querySelectorAll("a.zoom")];
@@ -50,10 +58,18 @@ $(".lb-prev").addEventListener("click", () => show(index - 1));
 $(".lb-next").addEventListener("click", () => show(index + 1));
 dialog.addEventListener("keydown", (e) => {
   if (group.length < 2) return;
-  if (e.key === "ArrowLeft") { e.preventDefault(); show(index - 1); }
-  if (e.key === "ArrowRight") { e.preventDefault(); show(index + 1); }
+  if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    show(index - 1);
+  }
+  if (e.key === "ArrowRight") {
+    e.preventDefault();
+    show(index + 1);
+  }
 });
-dialog.addEventListener("click", (e) => { if (e.target === dialog || e.target === $("figure")) dialog.close(); });
+dialog.addEventListener("click", (e) => {
+  if (e.target === dialog || e.target === $("figure")) dialog.close();
+});
 dialog.addEventListener("close", () => {
   big.removeAttribute("src");
   // Return focus to the photo the visitor ended on, not the one they opened.

@@ -4,23 +4,56 @@ import assert from "node:assert/strict";
 import { handler, _setSquare, _resetLimits, clientIp } from "../src/handler.mjs";
 
 function fakeSquare({ stock = 1, fail = null } = {}) {
-  const orderStore = new Map(), byKey = new Map(), paymentStore = new Map();
+  const orderStore = new Map(),
+    byKey = new Map(),
+    paymentStore = new Map();
   let n = 0;
   const fakeCalls = {};
-  const iter = (arr) => ({ async *[Symbol.asyncIterator]() { yield* arr; } });
-  const boom = (step) => { throw new Error(`fake ${step} failure`); };
+  const iter = (arr) => ({
+    async *[Symbol.asyncIterator]() {
+      yield* arr;
+    },
+  });
+  const boom = (step) => {
+    throw new Error(`fake ${step} failure`);
+  };
   return {
-    orderStore, paymentStore, fakeCalls,
-    catalog: { list: async () => iter([{ type: "ITEM", id: "I1", itemData: { name: "Celadon bowl", variations: [
-      { id: "V1", itemVariationData: { name: "R", priceMoney: { amount: 5000n, currency: "USD" }, trackInventory: true } }] } }]) },
-    inventory: { batchGetCounts: async () => iter([{ catalogObjectId: "V1", quantity: String(stock), calculatedAt: "2000-01-01T00:00:00Z" }]) },
+    orderStore,
+    paymentStore,
+    fakeCalls,
+    catalog: {
+      list: async () =>
+        iter([
+          {
+            type: "ITEM",
+            id: "I1",
+            itemData: {
+              name: "Celadon bowl",
+              variations: [
+                { id: "V1", itemVariationData: { name: "R", priceMoney: { amount: 5000n, currency: "USD" }, trackInventory: true } },
+              ],
+            },
+          },
+        ]),
+    },
+    inventory: {
+      batchGetCounts: async () => iter([{ catalogObjectId: "V1", quantity: String(stock), calculatedAt: "2000-01-01T00:00:00Z" }]),
+    },
     orders: {
       calculate: async () => ({ order: { totalMoney: { amount: 5000n }, totalTaxMoney: { amount: 0n } } }),
       create: async ({ idempotencyKey, order: req }) => {
         fakeCalls.order = req;
         if (!byKey.has(idempotencyKey)) {
-          const o = { id: `O${++n}`, state: "OPEN", version: 1, totalMoney: { amount: 5000n }, tenders: [], fulfillments: [{ uid: "F1", state: "PROPOSED" }] };
-          byKey.set(idempotencyKey, o); orderStore.set(o.id, o);
+          const o = {
+            id: `O${++n}`,
+            state: "OPEN",
+            version: 1,
+            totalMoney: { amount: 5000n },
+            tenders: [],
+            fulfillments: [{ uid: "F1", state: "PROPOSED" }],
+          };
+          byKey.set(idempotencyKey, o);
+          orderStore.set(o.id, o);
         }
         return { order: byKey.get(idempotencyKey) };
       },
@@ -41,7 +74,8 @@ function fakeSquare({ stock = 1, fail = null } = {}) {
         fakeCalls.payment = req;
         if (fail === "authorize") boom("authorize");
         const p = { id: `P${++n}`, status: "APPROVED", receiptUrl: "https://receipt" };
-        paymentStore.set(p.id, p); orderStore.get(orderId).tenders.push({ paymentId: p.id });
+        paymentStore.set(p.id, p);
+        orderStore.get(orderId).tenders.push({ paymentId: p.id });
         return { payment: p };
       },
       complete: async ({ paymentId }) => {
@@ -50,38 +84,66 @@ function fakeSquare({ stock = 1, fail = null } = {}) {
         if (fail === "complete-reply-lost") boom("reply lost");
         return { payment: paymentStore.get(paymentId) };
       },
-      cancel: async ({ paymentId }) => { paymentStore.get(paymentId).status = "CANCELED"; return {}; },
+      cancel: async ({ paymentId }) => {
+        paymentStore.get(paymentId).status = "CANCELED";
+        return {};
+      },
       get: async ({ paymentId }) => ({ payment: paymentStore.get(paymentId) }),
     },
   };
 }
 
 const body = (key) => ({
-  lines: [{ variationId: "V1", quantity: 1 }], sourceId: "tok", idempotencyKey: key, fulfillment: "pickup",
-  name: "Ann Potter", email: "a@b.co", billing: { line1: "1 Main St", city: "Tacoma", state: "WA", postalCode: "98402" },
+  lines: [{ variationId: "V1", quantity: 1 }],
+  sourceId: "tok",
+  idempotencyKey: key,
+  fulfillment: "pickup",
+  name: "Ann Potter",
+  email: "a@b.co",
+  billing: { line1: "1 Main St", city: "Tacoma", state: "WA", postalCode: "98402" },
 });
-const post = async (b) => { const r = await handler({ requestContext: { http: { method: "POST" } }, rawPath: "/api/checkout", body: JSON.stringify(b) }); return { status: r.statusCode, body: JSON.parse(r.body) }; };
-const fresh = (opts) => { _resetLimits(); const sq = fakeSquare(opts); _setSquare(sq); return sq; };
+const post = async (b) => {
+  const r = await handler({ requestContext: { http: { method: "POST" } }, rawPath: "/api/checkout", body: JSON.stringify(b) });
+  return { status: r.statusCode, body: JSON.parse(r.body) };
+};
+const fresh = (opts) => {
+  _resetLimits();
+  const sq = fakeSquare(opts);
+  _setSquare(sq);
+  return sq;
+};
 const only = (map) => [...map.values()];
 
 test("declined card: no unpaid order is left behind", async () => {
   const sq = fresh({ fail: "authorize" });
   assert.equal((await post(body("k1"))).status, 500);
-  assert.deepEqual(only(sq.orderStore).map((o) => o.state), ["CANCELED"]);
+  assert.deepEqual(
+    only(sq.orderStore).map((o) => o.state),
+    ["CANCELED"],
+  );
 });
 
 test("failure after authorising releases the hold and cancels the order", async () => {
   const sq = fresh({ fail: "complete" });
   assert.equal((await post(body("k2"))).status, 500);
-  assert.deepEqual(only(sq.paymentStore).map((p) => p.status), ["CANCELED"]);
-  assert.deepEqual(only(sq.orderStore).map((o) => o.state), ["CANCELED"]);
+  assert.deepEqual(
+    only(sq.paymentStore).map((p) => p.status),
+    ["CANCELED"],
+  );
+  assert.deepEqual(
+    only(sq.orderStore).map((o) => o.state),
+    ["CANCELED"],
+  );
 });
 
 test("charge that went through despite an error is reported as success", async () => {
   const sq = fresh({ fail: "complete-reply-lost" });
   const r = await post(body("k3"));
   assert.equal(r.status, 200);
-  assert.deepEqual(only(sq.paymentStore).map((p) => p.status), ["COMPLETED"]);
+  assert.deepEqual(
+    only(sq.paymentStore).map((p) => p.status),
+    ["COMPLETED"],
+  );
 });
 
 test("retry of a paid order (same key, page reloaded) shows success, not 'just sold'", async () => {
@@ -98,23 +160,40 @@ test("a different buyer after the sale is told it sold, not charged, with no str
   const second = await post(body("k6"));
   assert.equal(second.status, 409);
   assert.equal(second.body.notCharged, true);
-  assert.deepEqual(only(sq.orderStore).map((o) => o.state).sort(), ["CANCELED", "OPEN"]); // the probe order was cancelled
-  assert.deepEqual(only(sq.paymentStore).map((p) => p.status), ["COMPLETED"]);
+  assert.deepEqual(
+    only(sq.orderStore)
+      .map((o) => o.state)
+      .sort(),
+    ["CANCELED", "OPEN"],
+  ); // the probe order was cancelled
+  assert.deepEqual(
+    only(sq.paymentStore).map((p) => p.status),
+    ["COMPLETED"],
+  );
 });
 
 test("the same piece twice in one request is rejected", async () => {
   fresh();
-  const r = await post({ ...body("k7"), lines: [{ variationId: "V1", quantity: 1 }, { variationId: "V1", quantity: 1 }] });
+  const r = await post({
+    ...body("k7"),
+    lines: [
+      { variationId: "V1", quantity: 1 },
+      { variationId: "V1", quantity: 1 },
+    ],
+  });
   assert.equal(r.status, 400);
   assert.match(r.body.errors.join(" "), /only appear once/);
 });
 
 test("client IP comes from the forwarded chain, not CloudFront's address", () => {
-  const ev = (xff, src = "130.176.1.1") => ({ requestContext: { http: { sourceIp: src } }, headers: xff ? { "x-forwarded-for": xff } : {} });
+  const ev = (xff, src = "130.176.1.1") => ({
+    requestContext: { http: { sourceIp: src } },
+    headers: xff ? { "x-forwarded-for": xff } : {},
+  });
   assert.equal(clientIp(ev("203.0.113.9")), "203.0.113.9");
-  assert.equal(clientIp(ev("203.0.113.9, 130.176.1.1")), "203.0.113.9");      // Function URL appended CloudFront
-  assert.equal(clientIp(ev("6.6.6.6, 203.0.113.9")), "203.0.113.9");          // client tried to fake an address
-  assert.equal(clientIp(ev("")), "130.176.1.1");                               // direct call, no proxy
+  assert.equal(clientIp(ev("203.0.113.9, 130.176.1.1")), "203.0.113.9"); // Function URL appended CloudFront
+  assert.equal(clientIp(ev("6.6.6.6, 203.0.113.9")), "203.0.113.9"); // client tried to fake an address
+  assert.equal(clientIp(ev("")), "130.176.1.1"); // direct call, no proxy
 });
 
 test("a function only serves its own routes", async () => {

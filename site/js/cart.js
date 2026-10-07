@@ -5,10 +5,18 @@ const MAX_QTY = 10;
 const cap = (l) => Math.min(MAX_QTY, l.max ?? MAX_QTY);
 
 export const getCart = () => {
-  try { return JSON.parse(localStorage.getItem(KEY)) ?? []; } catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(KEY)) ?? [];
+  } catch {
+    return [];
+  }
 };
 const save = (c) => {
-  try { localStorage.setItem(KEY, JSON.stringify(c)); } catch { /* private mode */ }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(c));
+  } catch {
+    /* private mode */
+  }
   document.dispatchEvent(new CustomEvent("cart-changed"));
 };
 
@@ -25,7 +33,11 @@ export function addToCart(line) {
   return true;
 }
 export function setQuantity(variationId, quantity) {
-  save(getCart().map((l) => (l.variationId === variationId ? { ...l, quantity: Math.min(quantity, cap(l)) } : l)).filter((l) => l.quantity > 0));
+  save(
+    getCart()
+      .map((l) => (l.variationId === variationId ? { ...l, quantity: Math.min(quantity, cap(l)) } : l))
+      .filter((l) => l.quantity > 0),
+  );
 }
 // Bulk rewrite (used to drop sold pieces and refresh stock limits); fn gets and returns the line array.
 export const updateCart = (fn) => save(fn(getCart()).filter((l) => l.quantity > 0));

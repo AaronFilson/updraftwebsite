@@ -1,42 +1,64 @@
 # Deploying updraftpotterystudio.com
 
-Everything runs as the `copper-bell` IAM user (default AWS CLI profile), whose permissions come from the
-`updraft-publish` managed policy in [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json).
-That policy only reaches resources named `updraft-*` and DNS records under `updraftpotterystudio.com`.
+Two stages, each a pair of CloudFormation stacks, configured in [`stages.json`](stages.json) (no secrets there):
 
-| Piece | What | How it is managed |
+| Stage | Site | Stacks |
 |---|---|---|
-| `updraft-site` stack ([`site.yaml`](site.yaml)) | S3 bucket `updraft-site-724654236968`, CloudFront, HTTPS certificate, security headers | `aws cloudformation deploy` |
-| `updraft-api` stack ([`../backend/template.yaml`](../backend/template.yaml)) | Two Lambdas from one bundle: `Api` (catalog, tax quote, signup) and `Checkout` (one order at a time, so a one-of-a-kind piece can't sell twice) | `npm run deploy:api` |
-| DNS (zone `Z88UBBDI22ZJ9`) | apex + `www` A/AAAA aliases to CloudFront | `node scripts/dns-cutover.mjs` |
+| `prod` | https://updraftpotterystudio.com | `updraft-site`, `updraft-api` |
+| `staging` | https://staging.updraftpotterystudio.com (not indexed) | `updraft-staging-site`, `updraft-staging-api` |
 
-## Publish an update (the usual task)
+Deploys run as the `copper-bell` IAM user locally, or as the `updraft-github-deploy` role from GitHub Actions. Both get the
+`updraft-publish` managed policy in [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json), which only
+reaches resources named `updraft-*`, parameters under `/updraft/`, and DNS records under `updraftpotterystudio.com`.
 
-```
-npm run publish               # build, upload, invalidate CloudFront
-npm run publish -- --dry-run  # preview what would change
-```
+| Piece | What |
+|---|---|
+| site stack ([`site.yaml`](site.yaml)) | Private S3 bucket, CloudFront, HTTPS certificate, security headers; `/api/checkout` and `/api/*` routed to the functions through origin access control, so the functions only accept requests CloudFront signed. Staging's DNS record is in the stack. |
+| API stack ([`../backend/template.yaml`](../backend/template.yaml)) | Two Lambdas from one bundle: `Api` (catalog, tax quote, signup) and `Checkout` (one order at a time, so a one-of-a-kind piece can't sell twice). Square token read from SSM. 30-day log groups, and alarms emailed through SNS. |
+| Square token | SSM Parameter Store SecureString `/updraft/<stage>/square-access-token` |
+| Production DNS | apex + `www` A/AAAA aliases to CloudFront, switched with `node scripts/dns-cutover.mjs` |
 
-## Change the infrastructure
-
-```
-aws cloudformation deploy --template-file deploy/site.yaml --stack-name updraft-site
-```
-
-Parameters you don't pass (like `ApiDomain`) keep their current values.
-
-## Deploy or update the Square API
+## Everyday
 
 ```
-cp backend/.env.example backend/.env   # once; fill in SQUARE_ACCESS_TOKEN etc. (git-ignored)
-npm run deploy:api
+npm run publish -- --stage staging    # build, upload, invalidate CloudFront (staging)
+npm run publish                       # same for production
+npm run deploy:api -- --stage staging # API + CloudFront routing; then publish
 ```
 
-This bundles `backend/src/handler.mjs` with esbuild (only the bundle is uploaded, so `.env` never ships),
-deploys the `updraft-api` stack via the `updraft-artifacts-724654236968` bucket, and redeploys `updraft-site`
-with `ApiDomain`/`CheckoutDomain` so CloudFront routes `/api/checkout` to the checkout function and the rest of `/api/*` to the API.
-The script refuses to deploy (and deletes the upload) if a code package is over 3 MB, which would mean the whole
-`backend/` folder, `.env` included, was zipped instead of the bundle. The token goes from `.env` straight to AWS and is never printed.
+Or from GitHub: Actions → Deploy → Run workflow → pick the stage (production asks for approval).
+
+## Square token
+
+```
+npm run put-token -- --stage staging  # reads SQUARE_ACCESS_TOKEN from backend/.env (git-ignored) or the environment
+npm run put-token                     # production
+```
+
+The token goes straight into SSM (via a temporary file, never printed). The functions read it on their next cold start;
+redeploy to pick up a new one immediately. After replacing a token in Square, run this and redeploy.
+
+## Safety checks in the deploy
+
+- `deploy:api` refuses to deploy (and deletes the upload) if a code package is over 3 MB, which would mean the whole
+  `backend/` folder, `.env` included, was zipped instead of the bundle.
+- Switching an older stack from public function URLs to CloudFront-only goes site first (CloudFront starts
+  signing, which public URLs ignore), then API (URLs locked; CloudFront's permission applies at once), so the
+  shop keeps working throughout.
+
+## One-time admin setup (AWS console, signed in as an admin)
+
+1. **Update `updraft-publish`:** IAM → Policies → `updraft-publish` → Edit → JSON → replace with
+   [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json) → Save (set as default version).
+2. **Create `updraft-lambda-ssm-read`:** IAM → Policies → Create policy → JSON → paste
+   [`lambda-ssm-read-policy.json`](lambda-ssm-read-policy.json) → name exactly `updraft-lambda-ssm-read`. The deploy can
+   attach only this and the basic Lambda logging policy to the functions it creates.
+3. **CI deploy role (optional, for GitHub Actions):** IAM → Roles → Create role → Custom trust policy → paste
+   [`github-deploy-trust.json`](github-deploy-trust.json) → attach `updraft-publish` → name `updraft-github-deploy`.
+   (GitHub's OIDC provider already exists in the account, from glazecalc.) Then in GitHub: Settings → Environments →
+   create `staging` and `production` (add yourself as a required reviewer on production), each with variable
+   `AWS_DEPLOY_ROLE_ARN` = the role's ARN.
+4. **Alarm emails:** after the first API deploy, confirm the "AWS Notification - Subscription Confirmation" email.
 
 ## Switching the domain (one time) and rolling back
 

@@ -3,10 +3,12 @@
 Static site (plain HTML/CSS/JS) plus a small AWS Lambda that talks to Square.
 
 ```
-site/      source: HTML templates, CSS, JS, data/*.json, images/ (full-size masters, never uploaded)
-scripts/   build.mjs: produces dist/
+site/      source: HTML templates, CSS, JS (+ js/test/ unit tests), data/*.json, images/ (full-size masters, never uploaded)
+scripts/   build.mjs produces dist/; publish, deploy-api, put-token, serve (local preview)
 dist/      generated; this is what gets uploaded to S3
-backend/   Lambda: GET /api/catalog, POST /api/checkout (Square Catalog, Orders, Payments APIs)
+backend/   Lambda: catalog, tax quote, checkout, signup (Square Catalog, Orders, Payments, Customers APIs) + test/
+e2e/       browser tests (Playwright) against dist/ with the API mocked
+deploy/    CloudFormation for hosting, stage settings, IAM policies; see deploy/README.md
 ```
 
 ## Build
@@ -47,7 +49,7 @@ Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and eac
 ## Setup
 
 1. **Square app**: [developer.squareup.com](https://developer.squareup.com/apps) > create an application. Note the Application ID, the Access Token (sandbox first) and your Location ID.
-2. **Deploy the API**: copy `backend/.env.example` to `backend/.env` (git-ignored), fill in the access token and settings, then run `npm run deploy:api`. It bundles the handler (only the bundle is uploaded, so `.env` never ships), deploys the `updraft-api` stack, and routes `/api/*` through CloudFront. Put `squareAppId`, `squareLocationId`, `squareEnv` and `shippingCents` in `site/js/config.js` (public values only), then `npm run publish`.
+2. **Deploy the API**: put the stage's public Square settings (`squareAppId`, `squareLocationId`, `squareEnv`, `shippingCents`) in `deploy/stages.json`. Put the access token in `backend/.env` (git-ignored) and run `npm run put-token`, which stores it in SSM Parameter Store. Then `npm run deploy:api` and `npm run publish`. Add `-- --stage staging` to any of these for the staging site. Details are in [`deploy/README.md`](deploy/README.md).
 3. **Site hosting**: S3 bucket (private) + CloudFront with Origin Access Control, default root object `index.html`, custom error response 404 -> `/error.html`, and an ACM certificate for your domain. Turn on **Compress objects automatically** (gzip/Brotli) in the CloudFront cache behavior. Upload the content-hashed folders with long caching and everything else (HTML, favicon, manifest, robots, sitemap) with short caching:
    ```
    aws s3 sync dist/ s3://YOUR-BUCKET --delete --exclude "*" --include "assets/*" --include "img/*" --include "full/*" --cache-control "public,max-age=31536000,immutable"
@@ -63,11 +65,17 @@ Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and eac
    base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
    ```
    Check the hosts against Square's current Web Payments SDK CSP docs, and roll it out as `Content-Security-Policy-Report-Only` first, then switch once a sandbox checkout works with no violations.
-4. **Go live**: redeploy the API with `SquareEnv=production` and the production token, and set `squareEnv: "production"` and the production application ID in `config.js`. Test the whole flow in sandbox first with Square's test card `4111 1111 1111 1111`.
+4. **Go live**: in `deploy/stages.json`, set prod's `squareEnv` to `"production"` with the production application and location IDs. Run `npm run put-token` with the production token, then `npm run deploy:api` and `npm run publish`. Test the whole flow on staging first, with Square's test card `4111 1111 1111 1111`.
 
-## Local preview
+## Local preview and checks
 
 ```
-npm run build && npm run preview
-cd backend && npm test
+npm run build && npm run preview   # http://localhost:4173
+npm run lint                       # ESLint
+npm run typecheck                  # TypeScript over the JS (JSDoc types)
+npm run format:check               # Prettier (npm run format to fix)
+npm test                           # unit tests: site/js/test and backend/test
+npm run test:e2e                   # browser tests in Chromium, Firefox and WebKit (after a build)
 ```
+
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of these, plus `cfn-lint` on the CloudFormation templates, on every push to master and on pull requests. Deploys run from Actions → Deploy ([`deploy.yml`](.github/workflows/deploy.yml)).
