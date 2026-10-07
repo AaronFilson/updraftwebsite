@@ -23,7 +23,8 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    # Named, not ubuntu-latest, so the OS (fonts, browser packages) only changes in a commit.
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: ${{ inputs.stage == 'prod' && 'production' || 'staging' }}
     permissions:
