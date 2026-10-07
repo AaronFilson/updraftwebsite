@@ -1,9 +1,19 @@
 // Every page at phone, tablet and desktop widths: no sideways scrolling, no script errors, and the
-// nav and headline lay out as designed.
+// headline lays out as designed. The menus have their own spec (menu.spec.mjs).
 import { test, expect } from "@playwright/test";
 import { mockApi } from "./mock-api.mjs";
 
-const pages = ["/", "/past-work.html", "/kilns.html", "/terms.html", "/care.html", "/policies.html", "/shop.html", "/no-such-page"];
+const pages = [
+  "/",
+  "/about.html",
+  "/past-work.html",
+  "/kilns.html",
+  "/terms.html",
+  "/care.html",
+  "/policies.html",
+  "/shop.html",
+  "/no-such-page",
+];
 const widths = [390, 768, 1280];
 
 for (const width of widths) {
@@ -23,18 +33,6 @@ for (const width of widths) {
     }
   });
 }
-
-test.describe("phone layout", () => {
-  test.use({ viewport: { width: 390, height: 844 } });
-  test("nav fits one line with the short Glossary label", async ({ page }) => {
-    await page.goto("/");
-    const nav = await page.evaluate(() => ({
-      rows: new Set([...document.querySelectorAll("nav a")].map((a) => Math.round(a.getBoundingClientRect().top))).size,
-      glossary: document.querySelector('nav a[href="/terms.html"]').innerText,
-    }));
-    expect(nav).toEqual({ rows: 1, glossary: "Glossary" });
-  });
-});
 
 // The home headline and subtitle each break only at their <br> (after "hand," and before "from").
 // Widest real-device fonts, as width / font-size: "Pottery shaped by hand," 12.2 (Georgia) and

@@ -17,9 +17,10 @@
     <section>
       <h1 class="page-title">Shop</h1>
       <p class="lede shop-lede">Food safe with lead-free glazes, dishwasher and microwave safe. Not for the oven, stovetop or open flame. <a href="/care.html">Care &amp; use</a></p>
+      <p class="lede shop-lede">Local pickup in Tacoma, or shipping within the US. Orders ship in 1–2 business days. {{policiesShopLink}}</p>
       <div class="shop-layout">
         <div>
-          <div id="products" class="grid" aria-busy="true">
+          <div id="products" class="grid products" aria-busy="true">
             <p class="empty">Loading pieces…</p>
             <noscript><p class="empty">The shop needs JavaScript turned on. You can still browse <a href="/#work">recent work</a> and <a href="/past-work.html">past work</a>.</p></noscript>
           </div>
@@ -102,6 +103,8 @@
           </form>
         </aside>
       </div>
+      <!-- phones: leads to the cart below the pieces once something is in it (shop.js) -->
+      <a class="cart-bar" id="cart-bar" href="#cart" hidden><span>Cart · <span id="cart-bar-count"></span> · <span id="cart-bar-total"></span></span><span>Checkout →</span></a>
     </section>
   </main>
 

@@ -48,3 +48,25 @@ test("field names read naturally in error messages", () => {
   assert.equal(fieldName("ZIP code"), "ZIP code");
   assert.equal(fieldName("State (2 letters, e.g. WA)"), "state");
 });
+
+test("availableNow keeps pieces with anything left to buy, in order, up to n", async () => {
+  const { availableNow, fromPrice } = await import("../shop-logic.js");
+  const piece = (id, ...variations) => ({
+    id,
+    name: id,
+    variations: variations.map(([price, stock], i) => ({ id: `${id}${i}`, price, stock })),
+  });
+  const items = [
+    piece("sold", [100, 0]),
+    piece("one", [200, 1]),
+    piece("open", [300, null]),
+    piece("old", [400, undefined]),
+    piece("x", [500, 2]),
+  ];
+  assert.deepEqual(
+    availableNow(items, 3).map((i) => i.id),
+    ["one", "open", "old"],
+  );
+  assert.deepEqual(fromPrice(piece("m", [3000, null], [5500, 3], [2000, 0])), { price: 3000, varies: true });
+  assert.deepEqual(fromPrice(piece("s", [6500, 1])), { price: 6500, varies: false });
+});

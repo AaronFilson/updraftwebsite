@@ -71,6 +71,7 @@ Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and eac
 
 ```
 npm run build && npm run preview   # http://localhost:4173
+npm run preview -- --api https://staging.updraftpotterystudio.com   # same, with the shop's data from staging (sandbox)
 npm run lint                       # ESLint
 npm run typecheck                  # TypeScript over the JS (JSDoc types)
 npm run format:check               # Prettier (npm run format to fix)

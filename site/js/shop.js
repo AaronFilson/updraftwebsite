@@ -11,6 +11,7 @@ import {
 } from "./shop-logic.js";
 import { addToCart, getCart, setQuantity, updateCart, clearCart, cartCount, lineMax, money } from "./cart.js";
 import "./cart-badge.js";
+import "./menu.js";
 import "./signup.js";
 
 const $ = (s) => document.querySelector(s);
@@ -58,6 +59,13 @@ async function renderProducts() {
       return;
     }
     box.replaceChildren(...items.map(productCard));
+    // A link to one piece (/shop.html#p-ITEMID, from the home page or a social post) lands on its card.
+    const target = location.hash.startsWith("#p-") && document.getElementById(location.hash.slice(1));
+    if (target) {
+      target.classList.add("is-target");
+      target.scrollIntoView({ block: "center" });
+      target.focus({ preventScroll: true });
+    }
   } catch {
     box.innerHTML = '<p class="empty">The shop is unavailable right now. Please try again later.</p>';
   } finally {
@@ -98,6 +106,8 @@ function markSold(ids, message) {
 function productCard(item) {
   const card = document.createElement("article");
   card.className = "card";
+  card.id = `p-${item.id}`;
+  card.tabIndex = -1; // a deep link can move focus here
   const media = document.createElement("div");
   media.className = "media";
   media.append(
@@ -546,5 +556,29 @@ form.addEventListener("submit", async (e) => {
 });
 
 syncAddressSections();
+// Phones: the cart sits below all the pieces, so once something is in it a bar at the bottom of the
+// screen leads there. It hides while the cart is on screen, and on wide screens (cart beside the pieces).
+const bar = $("#cart-bar");
+const narrow = matchMedia("(max-width: 899px)");
+let cartOnScreen = false;
+function syncBar() {
+  const n = cartCount();
+  bar.hidden = !n || cartOnScreen || !narrow.matches;
+  $("#cart-bar-count").textContent = items(n);
+  $("#cart-bar-total").textContent = money(subtotal());
+}
+new IntersectionObserver(([e]) => {
+  cartOnScreen = e.isIntersecting;
+  syncBar();
+}).observe($("#cart"));
+narrow.addEventListener("change", syncBar);
+document.addEventListener("cart-changed", syncBar);
+bar.addEventListener("click", (e) => {
+  e.preventDefault();
+  $("#cart").scrollIntoView({ block: "start" });
+  $("#cart-title").focus({ preventScroll: true });
+});
+
 renderProducts();
 renderCart();
+syncBar();

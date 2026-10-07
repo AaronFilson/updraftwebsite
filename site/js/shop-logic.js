@@ -26,6 +26,22 @@ export function reconcile(lines, stockById) {
   return { lines: kept, gone };
 }
 
+/** @typedef {{ id: string, name: string, image?: string | null, variations: { id: string, price: number, stock?: number | null }[] }} Item */
+
+/**
+ * Pieces that can still be bought (any option not sold out; no stock count = no limit), in catalog
+ * order, at most n. For the home page's "Available now".
+ * @param {Item[]} items
+ * @param {number} n
+ */
+export const availableNow = (items, n) => items.filter((i) => i.variations.some((v) => (v.stock ?? null) !== 0)).slice(0, n);
+
+/** The lowest price among a piece's options that aren't sold out, and whether others cost more. @param {Item} item */
+export function fromPrice(item) {
+  const prices = item.variations.filter((v) => (v.stock ?? null) !== 0).map((v) => v.price);
+  return { price: Math.min(...prices), varies: new Set(prices).size > 1 };
+}
+
 /** "A has sold and was removed…" / "A and B have sold and were removed…" @param {string[]} names */
 export const goneMessage = (names) =>
   `${names.join(" and ")} ${names.length > 1 ? "have" : "has"} sold and ${names.length > 1 ? "were" : "was"} removed from your cart.`;

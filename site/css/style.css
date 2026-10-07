@@ -49,9 +49,7 @@ h3 { font-size: 1.25rem; margin: 0 0 0.3em; }
 .site-header .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem 1rem; padding-block: .75rem; }
 .brand { font: 600 1.35rem var(--serif); color: var(--ink); text-decoration: none; }
 nav { display: flex; flex-wrap: wrap; gap: .1rem clamp(.75rem, 2.5vw, 1.5rem); align-items: center; }
-@media (max-width: 720px) { .site-header { position: static; } nav { font-size: .95rem; column-gap: .55rem; } }
-.nav-short { display: none; }
-@media (max-width: 719px) { .nav-long { display: none; } .nav-short { display: inline; } }
+@media (max-width: 720px) { .site-header { position: relative; } nav { font-size: .95rem; column-gap: .55rem; } }
 /* phones: a slimmer cart badge so "Cart 2" still fits on the nav line */
 @media (max-width: 480px) { nav { column-gap: .45rem; } .cart-link { gap: .2rem; } .badge { min-width: 1.15rem; padding: 0 .3rem; font-size: .72rem; line-height: 1.15rem; } }
 @media (max-width: 400px) { nav { font-size: .9rem; column-gap: .38rem; } }
@@ -59,6 +57,23 @@ nav a { color: var(--ink); text-decoration: none; padding: .4rem 0; }
 nav a:hover, nav a[aria-current] { color: var(--accent); }
 nav a[aria-current] { text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 6px; }
 .cart-link { display: inline-flex; gap: .4rem; align-items: center; }
+/* dropdowns: <details> menus (menu.js closes them on Escape or a click elsewhere). Panels hang from
+   the right of their button on wide screens and span the header on phones, so they never overflow. */
+.site-header .wrap { position: relative; }
+.menu { position: relative; }
+.menu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: .35rem; padding: .4rem 0; color: var(--ink); }
+.menu > summary::-webkit-details-marker { display: none; }
+.menu > summary::after { content: ""; width: .4em; height: .4em; border: solid currentColor; border-width: 0 2px 2px 0; transform: translateY(-.15em) rotate(45deg); }
+.menu[open] > summary::after { transform: translateY(.1em) rotate(-135deg); }
+.menu > summary:hover, .menu.is-current > summary, .menu[open] > summary { color: var(--accent); }
+.menu ul { position: absolute; top: calc(100% + .4rem); right: -.75rem; z-index: 20; width: max-content; min-width: 12rem; margin: 0; padding: .35rem; list-style: none;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); font-size: 1rem; }
+.menu ul a { display: flex; align-items: center; min-height: 44px; padding: .3rem .8rem; border-radius: 8px; }
+.menu ul a:hover { background: var(--bg); }
+@media (max-width: 720px) {
+  .menu { position: static; }
+  .menu ul { left: 0; right: 0; top: 100%; width: auto; }
+}
 .badge { background: var(--accent); color: var(--accent-ink); border-radius: 99px; min-width: 1.4rem; padding: 0 .4rem; text-align: center; font-size: .8rem; line-height: 1.4rem; }
 .badge[data-n="0"] { display: none; }
 
@@ -87,6 +102,19 @@ section { padding-block: clamp(2.5rem, 7vw, 5rem); }
 .card-body h3 { font-size: 1.25rem; margin: 0 0 .3em; }
 .card-body p { margin: 0; color: var(--muted); font-size: .95rem; }
 .price { font-weight: 600; }
+.product-strip { grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); }
+.product-link { color: inherit; text-decoration: none; }
+.product-link:hover h3, .product-link:focus-visible h3 { color: var(--accent); text-decoration: underline; }
+.product-link .card-body { gap: .15rem; }
+:is(.products, .product-strip) > .empty { grid-column: 1 / -1; }
+.card.is-target { outline: 3px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 599px) {
+  :is(.products, .product-strip) { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; }
+  :is(.products, .product-strip) .card-body { padding: .7rem .75rem .85rem; }
+  :is(.products, .product-strip) .card-body h3 { font-size: 1.05rem; }
+  .products .row { flex-direction: column; align-items: stretch; gap: .4rem; }
+  .products .row .btn { padding-inline: .5rem; }
+}
 .row { display: flex; gap: .5rem; align-items: center; justify-content: space-between; margin-top: auto; flex-wrap: wrap; }
 select, input, textarea { font: inherit; color: inherit; background: var(--bg); border: 1.5px solid var(--control); border-radius: 10px; padding: .65rem .8rem; width: 100%; min-height: 44px; }
 label.field { display: grid; gap: .25rem; font-size: .95rem; }
@@ -125,6 +153,20 @@ label.field { display: grid; gap: .25rem; font-size: .95rem; }
   background: rgb(255 255 255 / .85); color: #222; cursor: pointer; display: grid; place-items: center; }
 .hero-pause span { width: 12px; height: 14px; border-inline: 4px solid currentColor; } /* pause bars */
 .hero-pause[aria-label^="Play"] span { width: 0; height: 0; border-inline: 0; border-block: 8px solid transparent; border-left: 13px solid currentColor; margin-left: 4px; } /* play triangle */
+
+/* home: meet the potter + kiln projects, side by side on wide screens */
+.studio-grid { display: grid; gap: clamp(1rem, 3vw, 1.75rem); }
+@media (min-width: 760px) { .studio-grid { grid-template-columns: 1fr 1fr; } }
+.studio-card { background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; }
+.studio-card picture { display: block; }
+.studio-card img { width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; } /* height: auto, or the height attribute wins over the ratio */
+.studio-text { padding: 1.1rem 1.25rem 1.25rem; }
+.studio-text h2 { font-size: clamp(1.4rem, 3vw, 1.8rem); margin-bottom: .35em; }
+.studio-text p { margin: 0 0 .6rem; }
+.trust { padding-block: clamp(1.75rem, 4vw, 2.5rem); }
+.trust-list { list-style: none; padding: 0; margin-block: 0; display: grid; gap: .9rem 2.5rem; color: var(--muted); }
+@media (min-width: 760px) { .trust-list { grid-template-columns: 1fr 1fr; } }
+.trust-list a { white-space: nowrap; }
 
 /* email signup band */
 .signup { background: var(--surface); border-block: 1px solid var(--line); padding-block: clamp(2rem, 5vw, 3rem); }
@@ -171,6 +213,10 @@ fieldset { border: 0; padding: 0; margin: 0 0 1rem; display: grid; gap: .6rem; }
 legend { font-weight: 600; margin-bottom: .4rem; }
 .radios { display: flex; gap: 1rem; flex-wrap: wrap; } .radios label { display: flex; gap: .4rem; align-items: center; } .radios input { width: 1.5rem; height: 1.5rem; min-height: 0; margin: 0; accent-color: var(--accent); }
 #card-container { min-height: 90px; }
+.cart-bar { position: fixed; left: .75rem; right: .75rem; bottom: max(.75rem, env(safe-area-inset-bottom)); z-index: 15; display: flex; align-items: center;
+  justify-content: space-between; gap: .75rem; min-height: 48px; padding: .7rem 1.1rem; border-radius: 99px; background: var(--accent); color: var(--accent-ink);
+  font-weight: 600; text-decoration: none; box-shadow: var(--shadow); }
+body:has(.cart-bar:not([hidden])) footer { padding-bottom: 5.5rem; } /* so the bar never covers the footer */
 .msg { padding: .75rem 1rem; border-radius: 10px; margin-block: .75rem; }
 .msg.err { background: color-mix(in srgb, #c0392b 15%, var(--surface)); }
 .msg.ok { background: color-mix(in srgb, #2e8b57 18%, var(--surface)); }
@@ -213,10 +259,12 @@ section > h2 + .lede, section > .lede { margin-bottom: 1.5rem; }
 .lightbox :focus-visible { outline-color: #f3b08f; }
 
 footer { border-top: 1px solid var(--line); padding-block: 2rem; color: var(--muted); font-size: .95rem; }
-footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: space-between; }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 1rem 2.5rem; justify-content: space-between; align-items: start; }
+footer p { margin: 0; }
+.footer-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem 1.25rem; }
 
 @media print {
-  .site-header nav, .skip, footer span:last-child, #cart { display: none; }
+  .site-header nav, .skip, .footer-links, #cart, .cart-bar { display: none; }
   .site-header { position: static; backdrop-filter: none; }
   .card { box-shadow: none; break-inside: avoid; }
 }

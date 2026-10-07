@@ -27,14 +27,33 @@ const INDEXABLE = STAGE.indexable;
 const SITE_NAME = "Updraft Pottery Studio";
 const BG = { light: "#f6f1ea", dark: "#1b1714" };
 
+// Every page is in the menu, grouped under three dropdowns. Each is a <details>, so it opens by tap,
+// click or keyboard even without JavaScript (menu.js adds closing on Escape or a click elsewhere).
+/** @type {[string, [string, string][]][]} */
 const NAV = [
-  ["/#work", "Work"],
-  ["/past-work.html", "Past work"],
-  ["/kilns.html", "Kilns"],
-  // Full label where the nav has room (>= 720px, measured), short one on phones.
-  ["/terms.html", '<span class="nav-long">Ceramic Terms</span><span class="nav-short">Glossary</span>'],
-  ["/#about", "About"],
-  ["/shop.html", "Shop"],
+  [
+    "Work",
+    [
+      ["/#work", "Recent work"],
+      ["/past-work.html", "Past work"],
+    ],
+  ],
+  [
+    "Studio",
+    [
+      ["/about.html", "About"],
+      ["/kilns.html", "Kilns"],
+      ["/terms.html", "Glossary of ceramic terms"],
+    ],
+  ],
+  [
+    "Shop",
+    [
+      ["/shop.html", "All pieces"],
+      ["/care.html", "Care & use"],
+      ["/policies.html", "Shipping, pickup & returns"],
+    ],
+  ],
 ];
 
 const esc = (s = "") => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -165,6 +184,19 @@ ${slides.join("\n")}
 </div>`;
 }
 
+// One photo outside a gallery (no lightbox), lazy-loaded. only: the widths to offer; the maker photo
+// uses the slideshow's 800px file so it downloads once.
+function photo(meta, image, alt, { sizes, only = [400, 800] }) {
+  const m = meta[image];
+  if (!m) throw new Error(`Missing image ${image}`);
+  const have = Object.keys(m.webp).map(Number);
+  const ws = have.filter((w) => only.includes(w));
+  if (!ws.length) ws.push(Math.min(...have));
+  const set = (fmt) => ws.map((w) => `${m[fmt][w]} ${w}w`).join(", ");
+  return `<picture><source type="image/avif" srcset="${set("avif")}" sizes="${sizes}">
+<img src="${m.webp[ws[0]]}" srcset="${set("webp")}" sizes="${sizes}" width="${m.width}" height="${m.height}" alt="${esc(alt)}" loading="lazy" decoding="async"></picture>`;
+}
+
 async function ogImage() {
   const src = path.join(SRC, "images", "work", "08.jpg");
   const buf = await sharp(src).resize(1200, 630, { fit: "cover" }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
@@ -238,8 +270,13 @@ async function bundle() {
 }
 
 function nav(current) {
-  const links = NAV.map(([href, label]) => `<a href="${href}"${href === current ? ' aria-current="page"' : ""}>${label}</a>`).join("");
-  return `${links}<a class="cart-link" href="/shop.html#cart">Cart <span class="badge" data-cart-count data-n="0">0</span><span class="vh"> items</span></a>`;
+  const menus = NAV.map(([label, links]) => {
+    const items = links.filter(([href]) => href !== "/policies.html" || email); // that page is only built with an email set
+    const here = items.some(([href]) => href === current);
+    const li = items.map(([href, text]) => `<li><a href="${href}"${href === current ? ' aria-current="page"' : ""}>${esc(text)}</a></li>`);
+    return `<details class="menu${here ? " is-current" : ""}"><summary>${label}</summary><ul>${li.join("")}</ul></details>`;
+  });
+  return `${menus.join("")}<a class="cart-link" href="/shop.html#cart">Cart <span class="badge" data-cart-count data-n="0">0</span><span class="vh"> items</span></a>`;
 }
 
 const pageUrl = (name) => SITE_URL + (name === "index.html" ? "/" : `/${name}`);
@@ -329,7 +366,8 @@ const common = (current, js = assets.site) => ({
   "{{year}}": String(new Date().getFullYear()),
   "{{og}}": SITE_URL + og,
   "{{root}}": SITE_URL + "/",
-  "{{policiesLink}}": email ? ' · <a href="/policies.html">Shipping &amp; returns</a>' : "",
+  "{{policiesItem}}": email ? '<li><a href="/policies.html">Shipping &amp; returns</a></li>' : "",
+  "{{contactLine}}": email ? `<br>${mailto}` : "",
   "{{pickupEmail}}": email ? `by email at ${mailto}` : "by email",
   "{{policiesShopLink}}": email ? '<a href="/policies.html">Shipping, pickup &amp; returns</a>' : "",
   "{{contactEmail}}": esc(email),
@@ -346,7 +384,21 @@ const sizes = {
       "<!--signup-->": signup,
       "<!--hero-show-->": await heroShow(meta),
       "<!--work-->": await gallery("work.json", meta), // below the fold now; the slideshow photo is the priority
-      "<!--artist-->": await gallery("artist.json", meta, { only: HERO_WIDTHS }),
+      "<!--maker-photo-->": photo(meta, "images/artist/08.jpg", "Aaron Filson on a Puget Sound beach at low tide", {
+        sizes: "(min-width:760px) 520px, 100vw",
+        only: HERO_WIDTHS,
+      }),
+      "<!--kiln-photo-->": photo(meta, "images/soda-kiln/01.jpg", "The soda kiln at Elinor Maroney's studio in Covington", {
+        sizes: "(min-width:760px) 520px, 100vw",
+      }),
+    },
+    shared,
+  ),
+  "about.html": await page(
+    "about.html",
+    {
+      ...common("/about.html"),
+      "<!--artist-->": await gallery("artist.json", meta, { only: HERO_WIDTHS }), // same files as the home slideshow
     },
     shared,
   ),

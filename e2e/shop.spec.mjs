@@ -153,3 +153,47 @@ test("a busy checkout (HTTP 429) is retried with a message, then succeeds", asyn
   await expect(page.locator("#cart-lines")).toContainText("Thank you!", { timeout: 15_000 });
   expect(tries).toBe(3);
 });
+
+test.describe("on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("pieces show two to a row", async ({ page }) => {
+    await mockApi(page, { items: [bowl, mug, jar] });
+    await page.goto("/shop.html");
+    const lefts = await page.locator("#products .card").evaluateAll((cs) => cs.map((c) => Math.round(c.getBoundingClientRect().left)));
+    expect(new Set(lefts.slice(0, 2)).size).toBe(2);
+    expect(lefts[2]).toBe(lefts[0]);
+  });
+
+  test("once something is in the cart, a bar leads to it, and hides while the cart is on screen", async ({ page }) => {
+    await mockApi(page, { items: [bowl, mug, jar, item("d", "Dish", 4000, 1), item("e", "Ewer", 7000, 1)] });
+    await page.goto("/shop.html");
+    const bar = page.locator("#cart-bar");
+    await expect(bar).toBeHidden();
+    await card(page, "Everyday mug").getByRole("button").click();
+    await expect(bar).toBeVisible();
+    await expect(bar).toContainText("Cart · 1 item · $30.00");
+    await bar.click();
+    await expect(page.locator("#cart-title")).toBeFocused();
+    await expect(bar).toBeHidden(); // the cart itself is on screen now
+  });
+
+  test("a link to one piece lands on its card", async ({ page }) => {
+    await mockApi(page, { items: [item("a", "Cup A", 2800, 1), item("b", "Cup B", 2800, 1), item("c", "Cup C", 2800, 1), bowl] });
+    await page.goto("/shop.html#p-item-bowl");
+    const target = page.locator("#p-item-bowl");
+    await expect(target).toHaveClass(/is-target/);
+    await expect(target).toBeInViewport();
+  });
+});
+
+test.describe("on a wide screen", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+  test("there's no cart bar (the cart sits beside the pieces)", async ({ page }) => {
+    await mockApi(page, { items: [mug] });
+    await page.goto("/shop.html");
+    await card(page, "Everyday mug").getByRole("button").click();
+    await expect(page.locator(".cart-line")).toHaveCount(1);
+    await expect(page.locator("#cart-bar")).toBeHidden();
+  });
+});
