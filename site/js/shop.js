@@ -8,7 +8,13 @@ import {
   quoteKey as cartQuoteKey,
   phoneOk,
   fieldName as labelName,
+  specLine,
+  typeCounts,
+  showTypeFilters,
+  productData,
 } from "./shop-logic.js";
+import { picture } from "./photos.js";
+import { createPieceView } from "./piece-view.js";
 import { addToCart, getCart, setQuantity, updateCart, clearCart, cartCount, lineMax, money } from "./cart.js";
 import "./cart-badge.js";
 import "./menu.js";
@@ -41,8 +47,11 @@ const items = (n) => `${n} ${n === 1 ? "item" : "items"}`;
 // ---- products and stock ---------------------------------------------------------------------
 // variation id -> { stock: number | null (no limit), name } from the latest catalog.
 const stockById = new Map();
-const cardSyncs = new Set(); // each product card's "refresh my button and Sold label"
+const byId = new Map(); // item id -> catalog item
+const cardSyncs = new Set(); // every visible "buy" control's refresh (button text, Sold labels)
 const inCart = (id) => getCart().find((l) => l.variationId === id)?.quantity ?? 0;
+const stock = (v) => stockById.get(v.id)?.stock ?? null;
+const soldOut = (item) => item.variations.every((v) => stock(v) === 0);
 
 async function renderProducts() {
   const box = $("#products");
@@ -50,22 +59,23 @@ async function renderProducts() {
     const res = await getJson("/api/catalog");
     if (!res.ok) throw new Error();
     const { items } = await res.json();
-    for (const item of items)
+    for (const item of items) {
+      byId.set(item.id, item);
       for (const v of item.variations)
         stockById.set(v.id, { stock: v.stock ?? null, name: item.variations.length > 1 ? `${item.name} (${v.name})` : item.name });
+    }
     reconcileCart();
     if (!items.length) {
       box.innerHTML = '<p class="empty">Nothing is listed right now. Check back soon!</p>';
       return;
     }
     box.replaceChildren(...items.map(productCard));
-    // A link to one piece (/shop.html#p-ITEMID, from the home page or a social post) lands on its card.
-    const target = location.hash.startsWith("#p-") && document.getElementById(location.hash.slice(1));
-    if (target) {
-      target.classList.add("is-target");
-      target.scrollIntoView({ block: "center" });
-      target.focus({ preventScroll: true });
-    }
+    renderFilters(items);
+    // Search engines read prices and availability from this (a data block, so the CSP doesn't apply).
+    const data = Object.assign(document.createElement("script"), { type: "application/ld+json" });
+    data.textContent = JSON.stringify(productData(items, location.origin));
+    document.head.append(data);
+    openFromHash(); // a link to one piece: /shop.html#p-ITEM
   } catch {
     box.innerHTML = '<p class="empty">The shop is unavailable right now. Please try again later.</p>';
   } finally {
@@ -103,44 +113,20 @@ function markSold(ids, message) {
   notice(removedMessage(message, ids.length));
 }
 
-function productCard(item) {
-  const card = document.createElement("article");
-  card.className = "card";
-  card.id = `p-${item.id}`;
-  card.tabIndex = -1; // a deep link can move focus here
-  const media = document.createElement("div");
-  media.className = "media";
-  media.append(
-    item.image
-      ? Object.assign(document.createElement("img"), { src: item.image, alt: item.name, loading: "lazy", decoding: "async" })
-      : Object.assign(document.createElement("div"), { className: "ph" }),
-  );
-  const soldBadge = Object.assign(document.createElement("span"), { className: "sold-badge", textContent: "Sold" });
-  media.append(soldBadge);
-  const body = document.createElement("div");
-  body.className = "card-body";
-  const h = document.createElement("h3");
-  h.textContent = item.name;
-  const p = document.createElement("p");
-  p.textContent = item.description;
-
-  const stock = (v) => stockById.get(v.id)?.stock ?? null;
+// Option picker, price and Add to cart for one piece: on its card and in its detail view.
+// onSync(sold) lets the card show its Sold badge.
+function buyControls(item, onSync = (_sold) => {}) {
   const sel = document.createElement("select");
   sel.setAttribute("aria-label", `Option for ${item.name}`);
   for (const v of item.variations) sel.add(new Option(`${v.name} · ${money(v.price, v.currency)}`, v.id));
   sel.hidden = item.variations.length < 2;
-
-  const price = document.createElement("span");
-  price.className = "price";
+  const price = Object.assign(document.createElement("span"), { className: "price" });
   const btn = Object.assign(document.createElement("button"), { className: "btn", type: "button" });
   const selected = () => item.variations.find((v) => v.id === sel.value);
   // Button reads Add to cart / In cart (one-of-a-kind already added) / Sold.
   const sync = () => {
     const v = selected();
     const left = stock(v);
-    const allSold = item.variations.every((x) => stock(x) === 0);
-    card.classList.toggle("is-sold", allSold);
-    soldBadge.hidden = !allSold;
     for (const [n, opt] of [...sel.options].entries()) {
       const vv = item.variations[n];
       opt.textContent = `${vv.name} · ${money(vv.price, vv.currency)}${stock(vv) === 0 ? " · Sold" : ""}`;
@@ -153,6 +139,7 @@ function productCard(item) {
       "aria-label",
       left === 0 ? `${item.name} is sold` : full ? `${item.name} is in your cart` : `Add ${item.name} to cart`,
     );
+    onSync(soldOut(item));
   };
   cardSyncs.add(sync);
   sel.addEventListener("change", sync);
@@ -169,17 +156,109 @@ function productCard(item) {
     announce(added ? `Added ${item.name} to cart. Cart has ${items(cartCount())}.` : `${item.name} is already in your cart.`);
   });
   sync();
-
-  const row = document.createElement("div");
-  row.className = "row";
+  const row = Object.assign(document.createElement("div"), { className: "row" });
   row.append(price, btn);
-  body.append(h, p, sel, row);
+  return { sel, row, dispose: () => cardSyncs.delete(sync) };
+}
+
+function productCard(item) {
+  const card = document.createElement("article");
+  card.className = "card";
+  card.id = `p-${item.id}`;
+  card.dataset.type = item.category ?? "";
+  const href = `#p-${item.id}`;
+  // The photo and the name both open the piece's detail view; only the name is a tab stop.
+  const media = Object.assign(document.createElement("a"), { className: "media", href, tabIndex: -1 });
+  media.setAttribute("aria-hidden", "true");
+  media.append(
+    item.image
+      ? picture(item.image, { sizes: "(max-width: 599px) 46vw, 300px" })
+      : Object.assign(document.createElement("div"), { className: "ph" }),
+  );
+  const soldBadge = Object.assign(document.createElement("span"), { className: "sold-badge", textContent: "Sold" });
+  media.append(soldBadge);
+  const body = Object.assign(document.createElement("div"), { className: "card-body" });
+  const h = document.createElement("h3");
+  h.append(Object.assign(document.createElement("a"), { href, textContent: item.name }));
+  const spec = Object.assign(document.createElement("p"), { className: "spec", textContent: specLine(item.description) });
+  const { sel, row } = buyControls(item, (sold) => {
+    card.classList.toggle("is-sold", sold);
+    soldBadge.hidden = !sold;
+  });
+  body.append(h, ...(spec.textContent ? [spec] : []), sel, row);
   card.append(media, body);
   return card;
 }
 document.addEventListener("cart-changed", () => {
   for (const sync of cardSyncs) sync();
 });
+
+// ---- detail view, opened by #p-ITEM ----------------------------------------------------------
+// Opening from a click on this page adds a history entry (so Back closes it); arriving with the hash
+// (from the home page or a shared link) doesn't, so closing then just clears the hash.
+let pushed = false;
+const view = createPieceView({
+  buyControls,
+  onClose: (item) => {
+    if (pushed) history.back();
+    else if (location.hash.startsWith("#p-")) history.replaceState(null, "", location.pathname + location.search);
+    pushed = false;
+    // Back to the piece's name, unless focus already moved somewhere else on the page. Safari never
+    // focuses a clicked link, so there the browser has nothing of its own to restore.
+    setTimeout(() => {
+      const card = item && document.getElementById(`p-${item.id}`);
+      const now = document.activeElement;
+      if (card && (!now || now === document.body || now.closest("dialog.piece")))
+        /** @type {HTMLElement} */ (card.querySelector("h3 a")).focus();
+    });
+  },
+});
+function openFromHash(fromClick = false) {
+  const id = location.hash.startsWith("#p-") ? decodeURIComponent(location.hash.slice(3)) : "";
+  const item = byId.get(id);
+  if (item) {
+    pushed = fromClick;
+    view.open(item);
+  } else if (view.isOpen()) {
+    pushed = false; // the hash is already gone (Back was pressed)
+    view.close();
+  }
+}
+window.addEventListener("hashchange", () => openFromHash(true));
+
+// ---- browse by type (Square categories), once there are enough pieces ------------------------
+function renderFilters(list) {
+  const bar = $("#filters");
+  if (!showTypeFilters(list)) return;
+  const want = new URLSearchParams(location.search).get("type") ?? "";
+  const types = typeCounts(list);
+  let current = types.some((t) => t.name === want) ? want : "";
+  const options = [{ name: "", label: `All (${list.length})` }, ...types.map((t) => ({ name: t.name, label: `${t.name} (${t.count})` }))];
+  const buttons = options.map((o) => {
+    const b = Object.assign(document.createElement("button"), { type: "button", className: "chip", textContent: o.label });
+    b.addEventListener("click", () => {
+      current = o.name;
+      apply();
+      const shown = [.../** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll("#products .card"))].filter(
+        (c) => !c.hidden,
+      ).length;
+      announce(`Showing ${shown} ${shown === 1 ? "piece" : "pieces"}${current ? ` in ${current}` : ""}.`);
+    });
+    return b;
+  });
+  function apply() {
+    for (const c of /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll("#products .card")))
+      c.hidden = Boolean(current) && c.dataset.type !== current;
+    options.forEach((o, n) => buttons[n].setAttribute("aria-pressed", String(o.name === current)));
+    const url = new URL(location.href);
+    if (current) url.searchParams.set("type", current);
+    else url.searchParams.delete("type");
+    history.replaceState(history.state, "", url); // shareable, without adding history entries
+  }
+  bar.replaceChildren(...buttons);
+  bar.hidden = false;
+  apply();
+}
 
 const isShipping = () => form.fulfillment.value === "shipping";
 const shipSeparately = () => isShipping() && !form.shipSame.checked;

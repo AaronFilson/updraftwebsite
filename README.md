@@ -76,7 +76,32 @@ npm run lint                       # ESLint
 npm run typecheck                  # TypeScript over the JS (JSDoc types)
 npm run format:check               # Prettier (npm run format to fix)
 npm test                           # unit tests: site/js/test and backend/test
-npm run test:e2e                   # browser tests in Chromium, Firefox and WebKit (after a build)
+npm run test:e2e                   # browser tests in Chromium, Firefox and WebKit, incl. axe accessibility checks (after a build)
+npm run test:lighthouse            # Lighthouse budgets on the phone preset (after a build; set CHROME_PATH if Chrome isn't installed)
 ```
 
-CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of these, plus `cfn-lint` on the CloudFormation templates, on every push to master and on pull requests. Deploys run from Actions → Deploy ([`deploy.yml`](.github/workflows/deploy.yml)).
+CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs all of these, plus `cfn-lint` on the CloudFormation templates, on every push to master and on pull requests. It caches encoded photos (named by a hash of their inputs) and Playwright's browsers between runs. [CodeQL](.github/workflows/codeql.yml) scans the code, and [Dependabot](.github/dependabot.yml) opens weekly grouped dependency updates. Deploys run from Actions → Deploy ([`deploy.yml`](.github/workflows/deploy.yml)).
+
+## Checkout load test
+
+Every piece is one of a kind, so two buyers must never both pay for it. Checkout runs one order at a
+time and re-checks stock after authorising the card (see `backend/template.yaml`). `npm run load-test`
+proves it on a deployed sandbox stage: it sends many simultaneous buyers through CloudFront, exactly as
+the site does, at a piece with stock 1.
+
+```
+npm run load-test -- --stage staging --buyers 12 --item "test 2" --verify --restock
+```
+
+`--verify` asks Square how many payments completed or were left authorised, and `--restock` puts the
+piece back to stock 1. Both need the sandbox token. The script refuses to run against a production stage.
+
+Result on staging, 2026-10-07, 12 buyers at once:
+
+| Check | Result |
+|---|---|
+| Buyers charged | 1 |
+| Other buyers told "sold, not charged" | 11 of 11 |
+| Stock shown afterwards | 0 |
+| Square payments completed / authorisations left open | 1 / 0 |
+| Time until the last buyer heard "sold" | 53 s (queued behind one-at-a-time checkout) |

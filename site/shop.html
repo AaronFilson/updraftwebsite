@@ -7,7 +7,7 @@
   <meta name="description" content="Order handmade pottery from Updraft Pottery Studio in Tacoma, WA.">
 <!--meta-->
   {{css}}
-  <noscript><style>.signup-form { display: none; }</style></noscript>
+  <noscript><style>.signup-form, .ph-card { display: none; }</style></noscript>
   <script type="module" src="{{js}}"></script>
 </head>
 <body>
@@ -20,8 +20,16 @@
       <p class="lede shop-lede">Local pickup in Tacoma, or shipping within the US. Orders ship in 1–2 business days. {{policiesShopLink}}</p>
       <div class="shop-layout">
         <div>
+          <h2 class="vh">Pieces for sale</h2><!-- keeps headings in order: h1 Shop > h2 > each piece's h3 -->
+          <div id="filters" class="filters" role="group" aria-label="Show pieces by type" hidden></div>
+          <!-- Placeholder cards hold the grid's space until the pieces load (shop.js replaces them), so the
+               cart below doesn't jump on phones (it did: layout shift 0.3). -->
           <div id="products" class="grid products" aria-busy="true">
-            <p class="empty">Loading pieces…</p>
+            <p class="vh">Loading pieces…</p>
+            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
             <noscript><p class="empty">The shop needs JavaScript turned on. You can still browse <a href="/#work">recent work</a> and <a href="/past-work.html">past work</a>.</p></noscript>
           </div>
         </div>

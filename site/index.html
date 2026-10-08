@@ -20,7 +20,7 @@
   }
   </script>
   {{css}}
-  <noscript><style>.signup-form { display: none; }</style></noscript>
+  <noscript><style>.signup-form, #available { display: none; }</style></noscript>
   <script type="module" src="{{js}}"></script>
 </head>
 <body>
@@ -36,10 +36,18 @@
     </div>
 
     <!-- Filled from the Square catalog by available.js; stays hidden if the shop can't be reached. -->
-    <section id="available" aria-labelledby="available-title" hidden>
+    <!-- The placeholder cards hold the strip's space while the pieces load, so the page below doesn't jump
+         when they arrive (it did: layout shift 0.16 on phones). available.js swaps them out, or hides the
+         section if nothing is listed or the shop can't be reached; without JS a <noscript> style hides it. -->
+    <section id="available" aria-labelledby="available-title" aria-busy="true">
       <div class="wrap">
         <h2 id="available-title">Available now</h2>
-        <div class="grid product-strip" id="available-list"></div>
+        <div class="grid product-strip" id="available-list">
+          <div class="card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+          <div class="card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+          <div class="card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+          <div class="card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
+        </div>
         <p class="more"><a href="/shop.html">Shop all pieces →</a></p>
       </div>
     </section>

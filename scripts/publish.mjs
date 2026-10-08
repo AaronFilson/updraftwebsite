@@ -60,7 +60,34 @@ sync(
   YEAR,
 );
 // 2. Everything else: HTML, favicon, manifest, robots, sitemap.
-sync("pages", "--exclude", "assets/*", "--exclude", "img/*", "--exclude", "full/*", "--exclude", "*.webmanifest", "--cache-control", SHORT);
+sync(
+  "pages",
+  "--exclude",
+  "assets/*",
+  "--exclude",
+  "img/*",
+  "--exclude",
+  "full/*",
+  "--exclude",
+  "*.webmanifest",
+  "--exclude",
+  "*.js",
+  "--cache-control",
+  SHORT,
+);
+sync(
+  "root scripts",
+  "--exclude",
+  "*",
+  "--include",
+  "*.js",
+  "--exclude",
+  "assets/*",
+  "--content-type",
+  "text/javascript",
+  "--cache-control",
+  SHORT,
+); // p.js
 sync("manifest", "--exclude", "*", "--include", "*.webmanifest", "--content-type", "application/manifest+json", "--cache-control", SHORT);
 // 3. Remove anything that is no longer part of the build.
 sync("remove old files", "--delete", "--size-only");

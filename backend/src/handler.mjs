@@ -3,6 +3,7 @@
 //   POST /api/quote     -> tax and total for a cart; nothing is created (checkout.mjs)
 //   POST /api/checkout  -> order + authorise + stock re-check + charge (checkout.mjs)
 //   POST /api/subscribe -> email signup into the Square customer directory (subscribe.mjs)
+//   GET  /p/<item id>   -> share page for one piece: preview tags, then on to the shop (piece.mjs)
 // Each function serves only the routes in ROUTES (the template gives checkout its own function).
 import { SquareError } from "square";
 import { respond, clientIp } from "./http.mjs";
@@ -10,8 +11,9 @@ import { loadCatalog } from "./catalog.mjs";
 import { quote, checkout, declineMessage } from "./checkout.mjs";
 import { subscribe, _resetLimits as resetSubscribeLimits } from "./subscribe.mjs";
 import { _resetSales } from "./stock.mjs";
+import { piece } from "./piece.mjs";
 
-const routes = new Set((process.env.ROUTES ?? "catalog,quote,subscribe,checkout").split(",").map((r) => r.trim()));
+const routes = new Set((process.env.ROUTES ?? "catalog,quote,subscribe,checkout,piece").split(",").map((r) => r.trim()));
 const posts = { "/api/quote": quote, "/api/checkout": checkout, "/api/subscribe": subscribe };
 
 // A request body must be a JSON object. Anything else is the caller's mistake: answered 400 here so
@@ -34,6 +36,7 @@ export async function handler(event) {
     if (route && !routes.has(route)) return respond(404, { errors: ["Not found"] });
     if (method === "GET" && path === "/api/catalog")
       return respond(200, { items: await loadCatalog() }, { "cache-control": "public, max-age=15" });
+    if (method === "GET" && routes.has("piece") && path?.startsWith("/p/")) return await piece(decodeURIComponent(path.slice(3)));
     if (method === "POST" && posts[path]) {
       const body = readBody(event);
       if (!body) return respond(400, { errors: ["Bad request."] });

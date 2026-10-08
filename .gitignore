@@ -54,6 +54,8 @@ dist/
 .cache/
 backend/packaged.yaml
 backend/.build/
+backend/.build-images/
 
 playwright-report/
 test-results/
+.lighthouseci/

@@ -1,0 +1,32 @@
+{
+  "items": [
+    {
+      "id": "fixture-bowl",
+      "name": "Celadon footed bowl",
+      "description": "Cone 10 porcelain · celadon · 5½″ wide × 3″ tall",
+      "image": null,
+      "variations": [{ "id": "fixture-bowl-v", "name": "Regular", "price": 6500, "currency": "USD", "stock": 1 }]
+    },
+    {
+      "id": "fixture-mug",
+      "name": "Everyday mug",
+      "description": "Cone 6 stoneware · holds 12 oz",
+      "image": null,
+      "variations": [{ "id": "fixture-mug-v", "name": "Regular", "price": 3000, "currency": "USD", "stock": null }]
+    },
+    {
+      "id": "fixture-jar",
+      "name": "Tenmoku jar",
+      "description": "Cone 10 stoneware · tenmoku",
+      "image": null,
+      "variations": [{ "id": "fixture-jar-v", "name": "Regular", "price": 9000, "currency": "USD", "stock": 0 }]
+    },
+    {
+      "id": "fixture-plate",
+      "name": "Lantern plate",
+      "description": "Soda-fired stoneware · 10″",
+      "image": null,
+      "variations": [{ "id": "fixture-plate-v", "name": "Regular", "price": 4800, "currency": "USD", "stock": 1 }]
+    }
+  ]
+}

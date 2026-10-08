@@ -7,7 +7,7 @@
 // control). An older stack with public URLs is switched site-first, so the shop keeps working
 // throughout (see below). Uses the default AWS profile (copper-bell) or the CI role.
 import { execFileSync } from "node:child_process";
-import { readFileSync, rmSync } from "node:fs";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import * as esbuild from "esbuild";
 import { currentStage } from "./stage.mjs";
@@ -102,6 +102,58 @@ await esbuild.build({
   logLevel: "info",
 });
 
+// The photo function (images.mjs): its own small bundle, plus sharp. sharp is a native module, so it
+// is installed for Lambda's Linux x64 whichever machine deploys, at the version the site build uses.
+const BUILD_IMAGES = path.join(BACKEND, ".build-images");
+rmSync(BUILD_IMAGES, { recursive: true, force: true });
+await esbuild.build({
+  entryPoints: [path.join(BACKEND, "src", "images.mjs")],
+  outfile: path.join(BUILD_IMAGES, "index.mjs"),
+  bundle: true,
+  platform: "node",
+  target: "node22",
+  format: "esm",
+  minify: true,
+  legalComments: "none",
+  external: ["sharp"],
+  logLevel: "info",
+});
+const sharpVersion = JSON.parse(readFileSync(path.join(ROOT, "node_modules", "sharp", "package.json"), "utf8")).version;
+// Run npm without a shell where we can: as an npm script, npm_execpath is its own CLI (a shell on
+// Windows is deprecated by Node, since it concatenates the arguments).
+const npmArgs = [
+  "install",
+  `sharp@${sharpVersion}`,
+  "--prefix",
+  BUILD_IMAGES,
+  "--os=linux",
+  "--cpu=x64",
+  "--libc=glibc",
+  "--no-save",
+  "--no-package-lock",
+  "--no-audit",
+  "--no-fund",
+];
+/** @type {import("node:child_process").ExecFileSyncOptions} */
+const quiet = { stdio: ["ignore", "ignore", "inherit"] };
+if (process.env.npm_execpath) execFileSync(process.execPath, [process.env.npm_execpath, ...npmArgs], quiet);
+else execFileSync("npm", npmArgs, { ...quiet, shell: process.platform === "win32" });
+console.log(`sharp ${sharpVersion} for linux-x64 installed`);
+
+// Guard, before anything is uploaded: code may only ever come from these fresh build folders. A
+// CodeUri pointing anywhere else makes `package` zip that folder instead; once it zipped the whole
+// backend folder, .env and its token included.
+step("Checking code folders");
+const BUILDS = { ".build": BUILD, ".build-images": BUILD_IMAGES };
+const codeUris = [...readFileSync(path.join(BACKEND, "template.yaml"), "utf8").matchAll(/^\s*CodeUri:\s*(\S+)/gm)].map((m) => m[1]);
+if (!codeUris.length || codeUris.some((u) => !Object.hasOwn(BUILDS, u)))
+  throw new Error(`backend/template.yaml CodeUri must be one of ${Object.keys(BUILDS).join(", ")}; found ${codeUris.join(", ")}`);
+for (const dir of Object.values(BUILDS)) {
+  const secret = readdirSync(dir, { recursive: true }).find((f) => /(^|[\\/])\.env/.test(String(f)));
+  if (secret) throw new Error(`${path.join(dir, String(secret))} must never be packaged; refusing to deploy.`);
+}
+console.log(`CodeUri ${codeUris.join(", ")}: build folders only, no .env files`);
+
 step("Packaging");
 const packaged = path.join(BACKEND, "packaged.yaml");
 aws(
@@ -117,19 +169,20 @@ aws(
   packaged,
 );
 
-// Guard: every uploaded code package must be the small bundle. A big one means the template made
-// `package` zip the whole backend folder (with .env); delete it and stop before anything deploys.
+// Guard, after upload: no package may be unexpectedly large (the API bundle is ~0.5 MB, the photo
+// function with sharp ~10 MB). Anything bigger is deleted and nothing deploys.
 step("Checking packaged code");
+const MAX_PACKAGE = 40 * 1024 * 1024;
 const uris = [...new Set([...readFileSync(packaged, "utf8").matchAll(/CodeUri:\s*(s3:\/\/\S+)/g)].map((m) => m[1]))];
 if (!uris.length) throw new Error("No packaged CodeUri found; refusing to deploy.");
 for (const uri of uris) {
   const [, bucketName, key] = uri.match(/^s3:\/\/([^/]+)\/(.+)$/);
   const size = Number(aws("s3api", "head-object", "--bucket", bucketName, "--key", key, "--query", "ContentLength", "--output", "text"));
-  if (size > 3 * 1024 * 1024) {
+  if (size > MAX_PACKAGE) {
     aws("s3", "rm", uri);
     rmSync(packaged, { force: true });
     throw new Error(
-      `Packaged code ${uri} is ${(size / 1048576).toFixed(1)} MB, so it is not just the bundle (it may contain backend/.env). Deleted it; fix CodeUri in backend/template.yaml.`,
+      `Packaged code ${uri} is ${(size / 1048576).toFixed(1)} MB, far more than the builds; deleted it. Check backend/template.yaml.`,
     );
   }
   console.log(`${uri}: ${(size / 1024).toFixed(0)} KB ok`);
@@ -183,6 +236,8 @@ const deploySite = (api) => {
     `CheckoutDomain=${new URL(api.CheckoutUrl).host}`,
     `ApiFunctionName=${api.ApiFunction}`,
     `CheckoutFunctionName=${api.CheckoutFunction}`,
+    `ImagesDomain=${api.ImagesUrl ? new URL(api.ImagesUrl).host : ""}`, // none on an older stack until its first deploy
+    `ImagesFunctionName=${api.ImagesFunction ?? ""}`,
   );
 };
 

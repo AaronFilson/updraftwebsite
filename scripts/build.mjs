@@ -6,7 +6,7 @@
 //  - shared header/footer partials and per-page head metadata (canonical, Open Graph, icons)
 //  - JS/CSS bundled, minified and content-hashed; HTML minified, comments stripped
 //  - icons, web manifest, robots.txt and (when SITE_URL is set) sitemap.xml
-import { readFile, writeFile, mkdir, rm, readdir, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
@@ -60,14 +60,6 @@ const esc = (s = "") => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;"
 const mb = (bytes) => (bytes / 1048576).toFixed(1) + " MB";
 const hash = (buf) => createHash("sha256").update(buf).digest("hex").slice(0, 8);
 
-async function newer(src, out) {
-  try {
-    return (await stat(out)).mtimeMs >= (await stat(src)).mtimeMs;
-  } catch {
-    return false;
-  }
-}
-
 // Writes buf into dist/<dir>/<name>-<hash><ext> and returns the site-relative URL.
 async function emit(dir, name, ext, buf) {
   await mkdir(path.join(OUT, dir), { recursive: true });
@@ -76,30 +68,44 @@ async function emit(dir, name, ext, buf) {
   return `/${dir}/${file}`.replaceAll("\\", "/");
 }
 
-const ENCODERS = {
-  webp: (img, w) => img.webp({ quality: w <= 400 ? 70 : 76, effort: 6 }),
-  avif: (img, w) => img.avif({ quality: w <= 400 ? 48 : 52, effort: 4 }),
+// Encoder settings by format and width.
+const ENCODE = {
+  webp: (w) => ({ quality: w <= 400 ? 70 : 76, effort: 6 }),
+  avif: (w) => ({ quality: w <= 400 ? 48 : 52, effort: 4 }),
 };
 
-// Encodes each master once into .cache, then copies into dist, so rebuilds are fast.
+// Encodes each master once into .cache/images, then copies into dist, so rebuilds are fast. Cache
+// files are named by a hash of everything that shapes the output (the photo's bytes, width, format,
+// encoder settings, sharp/libvips versions), not by file times: a cache restored in CI (where every
+// checkout looks new) is reused, and changing a quality setting re-encodes. Unused entries are pruned.
+const ENGINE = `sharp ${sharp.versions.sharp} vips ${sharp.versions.vips}`;
 async function images() {
   const meta = {};
+  const used = new Set();
+  await mkdir(CACHE, { recursive: true });
   for (const dir of await readdir(path.join(SRC, "images"))) {
     const srcDir = path.join(SRC, "images", dir);
-    await mkdir(path.join(CACHE, dir), { recursive: true });
     for (const file of (await readdir(srcDir)).filter((f) => /\.jpe?g$/i.test(f))) {
-      const src = path.join(srcDir, file);
+      const master = await readFile(path.join(srcDir, file));
+      const masterHash = createHash("sha256").update(master).digest("hex");
       const base = path.parse(file).name;
-      const { width, height } = await sharp(src).metadata();
+      const { width, height } = await sharp(master).metadata();
       const entry = { width, height, webp: {}, avif: {} };
       for (const w of WIDTHS.filter((w) => w <= width || w === WIDTHS[0])) {
         // AVIF is only used in the grid; the lightbox opens the 1600px WebP.
         for (const fmt of w < 1600 ? ["avif", "webp"] : ["webp"]) {
-          const cached = path.join(CACHE, dir, `${base}-${w}.${fmt}`);
-          if (!(await newer(src, cached))) {
-            await ENCODERS[fmt](sharp(src).resize({ width: w, withoutEnlargement: true }), w).toFile(cached);
+          const key = createHash("sha256")
+            .update(JSON.stringify([masterHash, w, fmt, ENCODE[fmt](w), ENGINE]))
+            .digest("hex")
+            .slice(0, 32);
+          const cached = path.join(CACHE, `${key}.${fmt}`);
+          used.add(path.basename(cached));
+          let buf = await readFile(cached).catch(() => null);
+          if (!buf) {
+            buf = await sharp(master).resize({ width: w, withoutEnlargement: true })[fmt](ENCODE[fmt](w)).toBuffer();
+            await writeFile(cached, buf);
           }
-          entry[fmt][w] = await emit(`img/${dir}`, `${base}-${w}`, `.${fmt}`, await readFile(cached));
+          entry[fmt][w] = await emit(`img/${dir}`, `${base}-${w}`, `.${fmt}`, buf);
         }
       }
       try {
@@ -111,6 +117,9 @@ async function images() {
       meta[`images/${dir}/${file}`] = entry;
     }
   }
+  // Drop encodes no photo uses any more (and the old per-folder layout), so the cache doesn't grow forever.
+  for (const e of await readdir(CACHE, { withFileTypes: true }))
+    if (!used.has(e.name)) await rm(path.join(CACHE, e.name), { recursive: true, force: true });
   return meta;
 }
 
@@ -217,6 +226,7 @@ async function icons() {
       .toBuffer();
   const [apple, i192, i512] = await Promise.all([180, 192, 512].map(async (s) => emit("img", `icon-${s}`, ".png", await png(s))));
   await writeFile(path.join(OUT, "favicon.svg"), svg);
+  await writeFile(path.join(OUT, "p.js"), await readFile(path.join(SRC, "p.js"))); // see backend/src/piece.mjs
   await writeFile(
     path.join(OUT, "site.webmanifest"),
     JSON.stringify({

@@ -18,6 +18,8 @@ Parameters:
     Description: Host of the checkout Function URL (one order at a time). Empty = /api/checkout goes to ApiDomain.
   ApiFunctionName: { Type: String, Default: "", Description: "Catalog/quote/signup function; set to let only this distribution call it" }
   CheckoutFunctionName: { Type: String, Default: "", Description: "Checkout function; set to let only this distribution call it" }
+  ImagesDomain: { Type: String, Default: "", Description: "Host of the photo-resizing Function URL. Empty = no /api/img route." }
+  ImagesFunctionName: { Type: String, Default: "", Description: "Photo-resizing function; set to let only this distribution call it" }
   NameSuffix: { Type: String, Default: "", Description: "Empty for production (keeps existing names), e.g. -staging otherwise" }
   IncludeWww: { Type: String, Default: "true", AllowedValues: ["true", "false"] }
   ManageDns: { Type: String, Default: "false", AllowedValues: ["true", "false"], Description: "Create the A/AAAA alias records here (staging)" }
@@ -27,7 +29,9 @@ Conditions:
   HasCheckout: !Not [!Equals [!Ref CheckoutDomain, ""]]
   LockApi: !Not [!Equals [!Ref ApiFunctionName, ""]]
   LockCheckout: !Not [!Equals [!Ref CheckoutFunctionName, ""]]
-  LockAny: !Or [!Condition LockApi, !Condition LockCheckout]
+  HasImages: !Not [!Equals [!Ref ImagesDomain, ""]]
+  LockImages: !Not [!Equals [!Ref ImagesFunctionName, ""]]
+  LockAny: !Or [!Condition LockApi, !Condition LockCheckout, !Condition LockImages]
   Www: !Equals [!Ref IncludeWww, "true"]
   Dns: !Equals [!Ref ManageDns, "true"]
 
@@ -126,6 +130,59 @@ Resources:
       Principal: cloudfront.amazonaws.com
       SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
 
+  ImagesUrlFromCloudFront:
+    Type: AWS::Lambda::Permission
+    Condition: LockImages
+    Properties:
+      FunctionName: !Ref ImagesFunctionName
+      Action: lambda:InvokeFunctionUrl
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+      FunctionUrlAuthType: AWS_IAM
+  ImagesInvokeFromCloudFront:
+    Type: AWS::Lambda::Permission
+    Condition: LockImages
+    Properties:
+      FunctionName: !Ref ImagesFunctionName
+      Action: lambda:InvokeFunction
+      Principal: cloudfront.amazonaws.com
+      SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${Distribution}"
+
+  # Resized shop photos never change for a given photo, width and format, so cache them for a year,
+  # keyed on exactly those three query values (anything else in the URL is ignored).
+  ImageCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Condition: HasImages
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub updraft-images${NameSuffix}
+        MinTTL: 86400
+        DefaultTTL: 31536000
+        MaxTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: false
+          EnableAcceptEncodingBrotli: false
+          HeadersConfig: { HeaderBehavior: none }
+          CookiesConfig: { CookieBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: whitelist, QueryStrings: [u, w, f] }
+  # Share pages (/p/<piece>) follow the origin's cache time (5 minutes), so a sold piece's preview
+  # catches up quickly.
+  PieceCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Condition: HasApi
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub updraft-pieces${NameSuffix}
+        MinTTL: 0
+        DefaultTTL: 300
+        MaxTTL: 3600
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          HeadersConfig: { HeaderBehavior: none }
+          CookiesConfig: { CookieBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
   SecurityHeaders:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
@@ -183,13 +240,20 @@ Resources:
               OriginAccessControlId: !If [LockCheckout, !GetAtt ApiAccessControl.Id, !Ref AWS::NoValue]
               CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
             - !Ref AWS::NoValue
+          - !If
+            - HasImages
+            - Id: images
+              DomainName: !Ref ImagesDomain
+              OriginAccessControlId: !If [LockImages, !GetAtt ApiAccessControl.Id, !Ref AWS::NoValue]
+              CustomOriginConfig: { OriginProtocolPolicy: https-only, OriginSSLProtocols: [TLSv1.2] }
+            - !Ref AWS::NoValue
         DefaultCacheBehavior:
           TargetOriginId: site
           ViewerProtocolPolicy: redirect-to-https
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
           ResponseHeadersPolicyId: !Ref SecurityHeaders
-        # Order matters: CloudFront uses the first matching pattern, so /api/checkout comes before /api/*.
+        # Order matters: CloudFront uses the first matching pattern, so /api/checkout and /api/img come before /api/*.
         CacheBehaviors:
           - !If
             - HasCheckout
@@ -202,6 +266,16 @@ Resources:
               ResponseHeadersPolicyId: !Ref SecurityHeaders
             - !Ref AWS::NoValue
           - !If
+            - HasImages
+            - PathPattern: /api/img
+              TargetOriginId: images
+              ViewerProtocolPolicy: https-only
+              AllowedMethods: [GET, HEAD]
+              Compress: false # already compressed image formats
+              CachePolicyId: !Ref ImageCachePolicy
+              ResponseHeadersPolicyId: !Ref SecurityHeaders
+            - !Ref AWS::NoValue
+          - !If
             - HasApi
             - PathPattern: /api/*
               TargetOriginId: api
@@ -209,6 +283,16 @@ Resources:
               AllowedMethods: [GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE]
               CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # Managed-CachingDisabled
               OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # Managed-AllViewerExceptHostHeader
+              ResponseHeadersPolicyId: !Ref SecurityHeaders
+            - !Ref AWS::NoValue
+          - !If
+            - HasApi
+            - PathPattern: /p/*
+              TargetOriginId: api
+              ViewerProtocolPolicy: redirect-to-https
+              AllowedMethods: [GET, HEAD]
+              Compress: true
+              CachePolicyId: !Ref PieceCachePolicy
               ResponseHeadersPolicyId: !Ref SecurityHeaders
             - !Ref AWS::NoValue
         CustomErrorResponses:

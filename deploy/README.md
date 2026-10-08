@@ -13,8 +13,8 @@ reaches resources named `updraft-*`, parameters under `/updraft/`, and DNS recor
 
 | Piece | What |
 |---|---|
-| site stack ([`site.yaml`](site.yaml)) | Private S3 bucket, CloudFront, HTTPS certificate, security headers; `/api/checkout` and `/api/*` routed to the functions through origin access control, so the functions only accept requests CloudFront signed. Staging's DNS record is in the stack. |
-| API stack ([`../backend/template.yaml`](../backend/template.yaml)) | Two Lambdas from one bundle: `Api` (catalog, tax quote, signup) and `Checkout` (one order at a time, so a one-of-a-kind piece can't sell twice). Square token read from SSM. 30-day log groups, and alarms emailed through SNS. |
+| site stack ([`site.yaml`](site.yaml)) | Private S3 bucket, CloudFront, HTTPS certificate, security headers; `/api/checkout`, `/api/img` (cached a year) and `/api/*` routed to the functions through origin access control, so the functions only accept requests CloudFront signed; `/p/*` share pages (cached 5 minutes) go to `Api`. Staging's DNS record is in the stack. |
+| API stack ([`../backend/template.yaml`](../backend/template.yaml)) | `Api` (catalog, tax quote, signup, `/p/` share pages) and `Checkout` (one order at a time, so a one-of-a-kind piece can't sell twice), from one bundle; `Images` (shop photos resized with sharp, its own package). Square token read from SSM. 30-day log groups, and alarms emailed through SNS. |
 | Square token | SSM Parameter Store SecureString `/updraft/<stage>/square-access-token` |
 | Production DNS | apex + `www` A/AAAA aliases to CloudFront, switched with `node scripts/dns-cutover.mjs` |
 

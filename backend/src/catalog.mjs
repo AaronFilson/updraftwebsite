@@ -27,10 +27,13 @@ export async function loadCatalog() {
   if (Date.now() - cache.at < CATALOG_TTL_MS) return cache.items;
 
   const objects = [];
-  const pager = await square().catalog.list({ types: "ITEM,IMAGE" });
+  const pager = await square().catalog.list({ types: "ITEM,IMAGE,CATEGORY" });
   for await (const obj of pager) objects.push(obj);
 
   const images = new Map(objects.filter((o) => o.type === "IMAGE").map((o) => [o.id, o.imageData?.url]));
+  const categories = new Map(objects.filter((o) => o.type === "CATEGORY").map((o) => [o.id, o.categoryData?.name]));
+  // Square has moved items from one category to a list; the reporting category (else the first) is the shop's "type".
+  const categoryOf = (d) => categories.get(d.reportingCategory?.id ?? d.categories?.[0]?.id ?? d.categoryId) ?? null;
   const info = new Map();
   const items = objects
     .filter((o) => o.type === "ITEM" && !o.isDeleted && o.itemData?.productType !== "APPOINTMENTS_SERVICE")
@@ -40,6 +43,8 @@ export async function loadCatalog() {
       name: o.itemData.name,
       description: o.itemData.descriptionPlaintext ?? o.itemData.description ?? "",
       image: images.get(o.itemData.imageIds?.[0]) ?? null,
+      images: (o.itemData.imageIds ?? []).map((id) => images.get(id)).filter(Boolean), // in the order set in Square
+      category: categoryOf(o.itemData),
       variations: (o.itemData.variations ?? [])
         .filter((v) => v.itemVariationData?.priceMoney)
         .map((v) => {

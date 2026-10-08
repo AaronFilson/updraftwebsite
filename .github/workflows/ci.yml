@@ -14,7 +14,7 @@ jobs:
     name: Node 24
     # Named, not ubuntu-latest, so the OS (fonts, browser packages) only changes in a commit.
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -53,21 +53,56 @@ jobs:
       - name: Unit tests (site and API)
         run: npm test
 
+      # Encoding every photo is most of the build. Cache entries are named by a hash of their inputs
+      # (scripts/build.mjs), so an older cache restored by the prefix is still safe: only new or
+      # changed photos get encoded, and the build prunes what's no longer used before it's saved.
+      - name: Restore encoded images
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/images
+          key: images-${{ hashFiles('site/images/**', 'scripts/build.mjs', 'package-lock.json') }}
+          restore-keys: images-
+
       - name: Build site
         run: npm run build
         env:
           SITE_URL: https://updraftpotterystudio.com
 
+      # Browser builds are pinned by the Playwright version, so cache them under that version. Their
+      # system packages still come from apt on every run (security updates, and apt isn't cached).
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+        run: |
+          npx playwright install-deps chromium firefox webkit
+          npx playwright install chromium firefox webkit
 
       - name: Browser tests (Chromium, Firefox, WebKit)
         run: npm run test:e2e
 
-      - name: Keep the Playwright report
+      # Lighthouse on the phone preset, using Playwright's Chromium (already installed above). Lighthouse
+      # CI runs through npx at a pinned version rather than from package-lock.json: its dependency tree
+      # (Puppeteer, proxy and FTP helpers it never uses here) carries advisories that would trip the
+      # audit gate, and none of it ships with the site.
+      - name: Lighthouse budgets
+        run: |
+          export CHROME_PATH="$(node -p "require('playwright-core').chromium.executablePath()")"
+          npm run test:lighthouse
+
+      - name: Keep the Playwright and Lighthouse reports
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-report
-          path: playwright-report/
+          name: test-reports
+          path: |
+            playwright-report/
+            .lighthouseci/
           retention-days: 7

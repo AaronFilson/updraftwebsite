@@ -42,6 +42,68 @@ export function fromPrice(item) {
   return { price: Math.min(...prices), varies: new Set(prices).size > 1 };
 }
 
+/** The first non-empty line of a description: the spec line ("Cone 10 porcelain · celadon · 5½″ × 3″"). */
+export const specLine = (/** @type {string} */ description = "") =>
+  description
+    .split(/\r?\n/)
+    .find((l) => l.trim())
+    ?.trim() ?? "";
+
+/** The description after the spec line, as paragraphs. */
+export function descriptionRest(/** @type {string} */ description = "") {
+  const lines = description.split(/\r?\n/).map((l) => l.trim());
+  const first = lines.findIndex(Boolean);
+  return first < 0 ? [] : lines.slice(first + 1).filter(Boolean);
+}
+
+// Type filters (Square categories) appear once there are enough pieces to need them.
+export const FILTER_MIN_PIECES = 8;
+
+/** Piece counts per type, most common first. @param {Item[] & { category?: string | null }[]} items */
+export function typeCounts(items) {
+  const counts = new Map();
+  for (const i of items) if (i.category) counts.set(i.category, (counts.get(i.category) ?? 0) + 1);
+  return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+}
+
+/** Show type filters only with at least FILTER_MIN_PIECES pieces in two or more types. @param {any[]} items */
+export const showTypeFilters = (items) => items.length >= FILTER_MIN_PIECES && typeCounts(items).length >= 2;
+
+/**
+ * schema.org Product data for the shop, so search engines can show price and availability.
+ * @param {any[]} items
+ * @param {string} origin e.g. https://updraftpotterystudio.com
+ */
+export function productData(items, origin) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: items.map((i, n) => {
+      const open = i.variations.filter((v) => (v.stock ?? null) !== 0);
+      const v = open[0] ?? i.variations[0];
+      return {
+        "@type": "ListItem",
+        position: n + 1,
+        item: {
+          "@type": "Product",
+          name: i.name,
+          description: i.description || undefined,
+          image: i.images?.length ? i.images : i.image ? [i.image] : undefined,
+          category: i.category || undefined,
+          brand: { "@type": "Brand", name: "Updraft Pottery Studio" },
+          offers: {
+            "@type": "Offer",
+            url: `${origin}/p/${i.id}`,
+            price: (Math.min(...(open.length ? open : i.variations).map((x) => x.price)) / 100).toFixed(2),
+            priceCurrency: v.currency ?? "USD",
+            availability: open.length ? "https://schema.org/InStock" : "https://schema.org/SoldOut",
+          },
+        },
+      };
+    }),
+  };
+}
+
 /** "A has sold and was removed…" / "A and B have sold and were removed…" @param {string[]} names */
 export const goneMessage = (names) =>
   `${names.join(" and ")} ${names.length > 1 ? "have" : "has"} sold and ${names.length > 1 ? "were" : "was"} removed from your cart.`;

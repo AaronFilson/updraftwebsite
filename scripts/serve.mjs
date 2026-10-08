@@ -3,14 +3,18 @@
 //   node scripts/serve.mjs [port]                                          (default 4173)
 //   node scripts/serve.mjs --api https://staging.updraftpotterystudio.com  also send /api/* there,
 //     so the shop and the home page's "Available now" show real (sandbox) pieces locally
+//   node scripts/serve.mjs --catalog e2e/fixtures/catalog.json  answer /api/catalog from a file
+//     (Lighthouse: a shop with pieces, no network, no failed request in the console)
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 
 const DIST = path.resolve(import.meta.dirname, "..", "dist");
 const args = process.argv.slice(2);
+const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const port = Number(args.find((a) => /^\d+$/.test(a)) ?? process.env.PORT ?? 4173);
-const API = args.includes("--api") ? args[args.indexOf("--api") + 1]?.replace(/\/$/, "") : undefined;
+const API = option("--api")?.replace(/\/$/, "");
+const CATALOG = option("--catalog");
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -46,6 +50,8 @@ async function proxy(req, res, url) {
 
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
+  if (CATALOG && url.pathname === "/api/catalog")
+    return res.writeHead(200, { "content-type": TYPES[".json"], "cache-control": "no-store" }).end(await readFile(CATALOG));
   if (API && url.pathname.startsWith("/api/")) return proxy(req, res, url);
   let file = path.join(DIST, decodeURIComponent(url.pathname));
   if (!file.startsWith(DIST)) return res.writeHead(400).end();
@@ -55,4 +61,8 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404, { "content-type": TYPES[".html"] }).end(await readFile(path.join(DIST, "error.html")).catch(() => "Not found"));
   }
-}).listen(port, () => console.log(`Serving dist/ at http://localhost:${port}${API ? `, /api/* from ${API}` : ""}`));
+}).listen(port, () =>
+  console.log(
+    `Serving dist/ at http://localhost:${port}${API ? `, /api/* from ${API}` : ""}${CATALOG ? `, /api/catalog from ${CATALOG}` : ""}`,
+  ),
+);

@@ -11,12 +11,15 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "node --test \"site/js/test/*.test.mjs\" && npm --prefix backend test",
     "test:e2e": "playwright test",
+    "test:lighthouse": "npx --yes @lhci/cli@0.15.1 autorun",
     "publish": "node scripts/publish.mjs",
     "deploy:api": "node scripts/deploy-api.mjs",
-    "put-token": "node scripts/put-token.mjs"
+    "put-token": "node scripts/put-token.mjs",
+    "load-test": "node scripts/load-test-checkout.mjs"
   },
   "devDependencies": {
     "@aws-sdk/client-ssm": "^3.1146.0",
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.4",

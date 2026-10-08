@@ -7,7 +7,9 @@ export const item = (id, name, price, stock, extra = {}) => ({
   id: `item-${id}`,
   name,
   description: extra.description ?? "",
-  image: null,
+  image: extra.images?.[0] ?? null,
+  images: extra.images ?? [],
+  category: extra.category ?? null,
   variations: [{ id, name: "Regular", price, currency: "USD", stock }],
 });
 

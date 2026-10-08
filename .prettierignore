@@ -7,6 +7,8 @@
 dist/
 .cache/
 backend/.build/
+backend/.build-images/
 playwright-report/
 test-results/
+.lighthouseci/
 package-lock.json

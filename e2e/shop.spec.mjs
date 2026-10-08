@@ -160,6 +160,7 @@ test.describe("on a phone", () => {
   test("pieces show two to a row", async ({ page }) => {
     await mockApi(page, { items: [bowl, mug, jar] });
     await page.goto("/shop.html");
+    await expect(page.locator("#products")).toHaveAttribute("aria-busy", "false"); // real cards, not the placeholders
     const lefts = await page.locator("#products .card").evaluateAll((cs) => cs.map((c) => Math.round(c.getBoundingClientRect().left)));
     expect(new Set(lefts.slice(0, 2)).size).toBe(2);
     expect(lefts[2]).toBe(lefts[0]);
@@ -178,12 +179,13 @@ test.describe("on a phone", () => {
     await expect(bar).toBeHidden(); // the cart itself is on screen now
   });
 
-  test("a link to one piece lands on its card", async ({ page }) => {
+  test("a link to one piece opens it full screen", async ({ page }) => {
     await mockApi(page, { items: [item("a", "Cup A", 2800, 1), item("b", "Cup B", 2800, 1), item("c", "Cup C", 2800, 1), bowl] });
     await page.goto("/shop.html#p-item-bowl");
-    const target = page.locator("#p-item-bowl");
-    await expect(target).toHaveClass(/is-target/);
-    await expect(target).toBeInViewport();
+    const view = page.locator("dialog.piece");
+    await expect(view.locator("h2")).toHaveText("Celadon bowl");
+    const box = await view.boundingBox();
+    expect([box.x, box.y, box.width]).toEqual([0, 0, 390]);
   });
 });
 

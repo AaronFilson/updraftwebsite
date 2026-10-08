@@ -57,7 +57,7 @@ Resources:
       ReservedConcurrentExecutions: !If [CapConcurrency, !Ref ApiConcurrency, !Ref AWS::NoValue]
       LoggingConfig: { LogGroup: !Ref ApiLogs }
       Environment:
-        Variables: { ROUTES: "catalog,quote,subscribe" } # merged with Globals; no checkout here
+        Variables: { ROUTES: "catalog,quote,subscribe,piece" } # merged with Globals; no checkout here
       # Only CloudFront can call it (it signs requests: origin access control in deploy/site.yaml). Keep
       # this literal: SAM only adds the public-access permissions for a literal NONE, not a parameter.
       FunctionUrlConfig:
@@ -76,6 +76,21 @@ Resources:
       LoggingConfig: { LogGroup: !Ref CheckoutLogs }
       Environment:
         Variables: { ROUTES: checkout } # merged with Globals
+      FunctionUrlConfig:
+        AuthType: AWS_IAM # see Api
+
+  # Shop photos resized on request (images.mjs). CloudFront caches each size for a year, so this only
+  # runs the first time a photo is asked for at a size. Its own package: sharp's Linux build (~10 MB).
+  ImagesLogs:
+    Type: AWS::Logs::LogGroup
+    Properties: { LogGroupName: !Sub "/updraft/${AWS::StackName}/images", RetentionInDays: 30 }
+  Images:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .build-images # the images bundle and sharp's Linux binaries, never the backend folder
+      MemorySize: 1024 # encoding is CPU-bound, and Lambda gives CPU in proportion to memory
+      ReservedConcurrentExecutions: !If [CapConcurrency, 2, !Ref AWS::NoValue] # caps work anyone can cause with uncached sizes
+      LoggingConfig: { LogGroup: !Ref ImagesLogs }
       FunctionUrlConfig:
         AuthType: AWS_IAM # see Api
 
@@ -151,7 +166,8 @@ Resources:
       Metrics:
         - { Id: api, ReturnData: false, MetricStat: { Metric: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref Api }] }, Period: 300, Stat: Sum } }
         - { Id: checkout, ReturnData: false, MetricStat: { Metric: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref Checkout }] }, Period: 300, Stat: Sum } }
-        - { Id: total, Expression: "api + checkout", Label: Errors, ReturnData: true }
+        - { Id: images, ReturnData: false, MetricStat: { Metric: { Namespace: AWS/Lambda, MetricName: Errors, Dimensions: [{ Name: FunctionName, Value: !Ref Images }] }, Period: 300, Stat: Sum } }
+        - { Id: total, Expression: "api + checkout + images", Label: Errors, ReturnData: true }
       EvaluationPeriods: 1
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
@@ -181,5 +197,9 @@ Outputs:
   CheckoutUrl:
     Description: Checkout Function URL (CloudFront routes /api/checkout here)
     Value: !GetAtt CheckoutUrl.FunctionUrl
+  ImagesUrl:
+    Description: Photo resizing Function URL (CloudFront routes /api/img here)
+    Value: !GetAtt ImagesUrl.FunctionUrl
   ApiFunction: { Value: !Ref Api }
   CheckoutFunction: { Value: !Ref Checkout }
+  ImagesFunction: { Value: !Ref Images }

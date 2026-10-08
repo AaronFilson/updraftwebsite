@@ -10,11 +10,20 @@ const bugRules = {
 
 export default [
   {
-    ignores: ["dist/", ".cache/", "backend/.build/", "**/node_modules/", "playwright-report/", "test-results/"],
+    ignores: [
+      "dist/",
+      ".cache/",
+      "backend/.build/",
+      "backend/.build-images/",
+      "**/node_modules/",
+      "playwright-report/",
+      "test-results/",
+      ".lighthouseci/",
+    ],
   },
   // Browser code, bundled by esbuild (scripts/build.mjs defines __SITE_CONFIG__).
   {
-    files: ["site/js/**/*.js"],
+    files: ["site/js/**/*.js", "site/p.js"],
     ...js.configs.recommended,
     languageOptions: { sourceType: "module", globals: { ...globals.browser, __SITE_CONFIG__: "readonly" } },
     rules: { ...js.configs.recommended.rules, ...bugRules },
