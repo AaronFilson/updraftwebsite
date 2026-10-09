@@ -3,7 +3,9 @@
 // that it sold, with their card not charged. Requests go through CloudFront like the site's (body
 // hash, HTTP 429 retries), so this tests the real path: CloudFront, the one-at-a-time Checkout
 // function, its recent-sales ledger and Square.
-//   npm run load-test -- --stage staging [--buyers 16] [--item "test 2"] [--verify] [--restock]
+//   npm run load-test -- --stage staging --item "test 2" [--buyers 16] [--verify] [--restock]
+// The stage and the piece must both be named (it buys the piece up), and prod is refused: real
+// shoppers use it, even while it runs on Square sandbox.
 // --verify  also asks Square how many payments completed and were cancelled (needs the token)
 // --restock sets the piece's stock back to 1 afterwards (needs the token)
 // The token comes from SQUARE_ACCESS_TOKEN or backend/.env and is never printed. Payments use Square's
@@ -16,7 +18,10 @@ import { currentStage } from "./stage.mjs";
 const args = process.argv.slice(2);
 const opt = (name, fallback) => (args.includes(`--${name}`) ? args[args.indexOf(`--${name}`) + 1] : fallback);
 const flag = (name) => args.includes(`--${name}`);
+if (!flag("stage") || !opt("item"))
+  throw new Error('Usage: npm run load-test -- --stage staging --item "<test piece with stock 1>" [--buyers 16] [--verify] [--restock]');
 const stage = currentStage();
+if (stage.name === "prod") throw new Error("Refusing: prod is where real shoppers are. Use --stage staging.");
 if (stage.squareEnv !== "sandbox")
   throw new Error(`Refusing: stage ${stage.name} uses Square ${stage.squareEnv}. Load tests run on sandbox only.`);
 const SITE = stage.siteUrl;
@@ -54,13 +59,8 @@ const square = async (route, body) => {
 // --- the piece ------------------------------------------------------------------------------------
 const items = await catalog();
 const wanted = opt("item");
-const piece = items.find((i) => (wanted ? i.name === wanted : i.variations.length === 1 && i.variations[0].stock === 1));
-if (!piece)
-  throw new Error(
-    wanted
-      ? `No piece named "${wanted}" on ${SITE}`
-      : `No one-of-a-kind piece in stock on ${SITE}; set one to stock 1 in Square (or use --item).`,
-  );
+const piece = items.find((i) => i.name === wanted);
+if (!piece) throw new Error(`No piece named "${wanted}" on ${SITE}`);
 const variation = piece.variations[0];
 if (variation.stock !== 1) throw new Error(`"${piece.name}" has stock ${variation.stock}; set it to 1 first (or run once with --restock).`);
 const lines = [{ variationId: variation.id, quantity: 1 }];

@@ -214,7 +214,9 @@ const view = createPieceView({
   },
 });
 function openFromHash(fromClick = false) {
-  const id = location.hash.startsWith("#p-") ? decodeURIComponent(location.hash.slice(3)) : "";
+  // Square ids are plain letters and digits, so the hash is compared as it is, never decoded: a
+  // mangled link like #p-% would throw, and the shop would show as unavailable.
+  const id = location.hash.startsWith("#p-") ? location.hash.slice(3) : "";
   const item = byId.get(id);
   if (item) {
     pushed = fromClick;

@@ -7,9 +7,10 @@ Two stages, each a pair of CloudFormation stacks, configured in [`stages.json`](
 | `prod` | https://updraftpotterystudio.com | `updraft-site`, `updraft-api` |
 | `staging` | https://staging.updraftpotterystudio.com (not indexed) | `updraft-staging-site`, `updraft-staging-api` |
 
-Deploys run as the `copper-bell` IAM user locally, or as the `updraft-github-deploy` role from GitHub Actions. Both get the
-`updraft-publish` managed policy in [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json), which only
-reaches resources named `updraft-*`, parameters under `/updraft/`, and DNS records under `updraftpotterystudio.com`.
+Deploys run as the `copper-bell` IAM user locally, or as the `updraft-github-deploy` role from GitHub Actions. Both have
+the `updraft-publish-ssm` managed policy (a copy is in [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json)),
+which only reaches resources named `updraft-*`, parameters under `/updraft/`, and DNS records under
+`updraftpotterystudio.com`. It can store the Square token but not read it back; only the functions can.
 
 | Piece | What |
 |---|---|
@@ -21,7 +22,7 @@ reaches resources named `updraft-*`, parameters under `/updraft/`, and DNS recor
 ## Everyday
 
 ```
-npm run publish -- --stage staging    # build, upload, invalidate CloudFront (staging)
+npm run publish -- --stage staging    # build, upload, clear CloudFront's copies of the pages (staging)
 npm run publish                       # same for production
 npm run deploy:api -- --stage staging # API + CloudFront routing; then publish
 ```
@@ -40,24 +41,29 @@ redeploy to pick up a new one immediately. After replacing a token in Square, ru
 
 ## Safety checks in the deploy
 
-- `deploy:api` refuses to deploy (and deletes the upload) if a code package is over 3 MB, which would mean the whole
-  `backend/` folder, `.env` included, was zipped instead of the bundle.
+- `deploy:api` only packages its fresh build folders: it refuses if a function's `CodeUri` points anywhere else or a
+  build folder holds a `.env` file, and deletes the upload if a package is over 40 MB. (Once, the whole `backend/`
+  folder, `.env` included, was zipped instead of the bundle.)
+- sharp, for the photo function, is installed from [`../backend/images-deps`](../backend/images-deps)'s lockfile with
+  install scripts off, since the deploy runs with AWS credentials.
+- `publish` clears CloudFront's copies of the pages only, never `/*`, so resized shop photos stay cached.
 - Switching an older stack from public function URLs to CloudFront-only goes site first (CloudFront starts
   signing, which public URLs ignore), then API (URLs locked; CloudFront's permission applies at once), so the
   shop keeps working throughout.
 
 ## One-time admin setup (AWS console, signed in as an admin)
 
-1. **Update `updraft-publish`:** IAM → Policies → `updraft-publish` → Edit → JSON → replace with
-   [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json) → Save (set as default version).
+1. **Deploy policy `updraft-publish-ssm`:** attached to `copper-bell`. To change it: IAM → Policies →
+   `updraft-publish-ssm` → Edit → JSON, then keep [`copper-bell-publish-policy.json`](copper-bell-publish-policy.json)
+   the same. The user is shared with glazecalc: never detach or replace its other policies.
 2. **Create `updraft-lambda-ssm-read`:** IAM → Policies → Create policy → JSON → paste
    [`lambda-ssm-read-policy.json`](lambda-ssm-read-policy.json) → name exactly `updraft-lambda-ssm-read`. The deploy can
    attach only this and the basic Lambda logging policy to the functions it creates.
 3. **CI deploy role (optional, for GitHub Actions):** IAM → Roles → Create role → Custom trust policy → paste
-   [`github-deploy-trust.json`](github-deploy-trust.json) → attach `updraft-publish` → name `updraft-github-deploy`.
+   [`github-deploy-trust.json`](github-deploy-trust.json) → attach `updraft-publish-ssm` → name `updraft-github-deploy`.
    (GitHub's OIDC provider already exists in the account, from glazecalc.) Then in GitHub: Settings → Environments →
-   create `staging` and `production` (add yourself as a required reviewer on production), each with variable
-   `AWS_DEPLOY_ROLE_ARN` = the role's ARN.
+   create `staging` and `production`, each with variable `AWS_DEPLOY_ROLE_ARN` = the role's ARN. On `production`, add
+   yourself as a required reviewer and limit deployment branches to `master`.
 4. **Alarm emails:** after the first API deploy, confirm the "AWS Notification - Subscription Confirmation" email.
 
 ## Switching the domain (one time) and rolling back

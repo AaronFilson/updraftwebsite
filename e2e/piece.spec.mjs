@@ -79,6 +79,13 @@ test("Back closes the detail view; a link to one piece opens it directly", async
   await expect(page).toHaveURL(/\/shop\.html$/);
 });
 
+test("a mangled piece link still shows the shop", async ({ page }) => {
+  await mockApi(page, { items: [bowl] });
+  await page.goto("/shop.html#p-%");
+  await expect(page.locator("#p-item-bowl")).toBeVisible();
+  await expect(dialog(page)).toBeHidden();
+});
+
 test("Share copies the piece's /p/ link where there's no share sheet", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, "share", { value: undefined });

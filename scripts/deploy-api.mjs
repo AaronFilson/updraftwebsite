@@ -7,7 +7,7 @@
 // control). An older stack with public URLs is switched site-first, so the shop keeps working
 // throughout (see below). Uses the default AWS profile (copper-bell) or the CI role.
 import { execFileSync } from "node:child_process";
-import { readFileSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import * as esbuild from "esbuild";
 import { currentStage } from "./stage.mjs";
@@ -103,7 +103,8 @@ await esbuild.build({
 });
 
 // The photo function (images.mjs): its own small bundle, plus sharp. sharp is a native module, so it
-// is installed for Lambda's Linux x64 whichever machine deploys, at the version the site build uses.
+// is installed for Lambda's Linux x64 whichever machine deploys, at the version pinned in
+// backend/images-deps (Dependabot keeps it current).
 const BUILD_IMAGES = path.join(BACKEND, ".build-images");
 rmSync(BUILD_IMAGES, { recursive: true, force: true });
 await esbuild.build({
@@ -118,19 +119,22 @@ await esbuild.build({
   external: ["sharp"],
   logLevel: "info",
 });
-const sharpVersion = JSON.parse(readFileSync(path.join(ROOT, "node_modules", "sharp", "package.json"), "utf8")).version;
+// Exactly the packages in backend/images-deps/package-lock.json (checked against its hashes), and no
+// install scripts: this runs where AWS credentials are, and sharp's prebuilt binaries need none.
+const DEPS = path.join(BACKEND, "images-deps");
+for (const f of ["package.json", "package-lock.json"]) copyFileSync(path.join(DEPS, f), path.join(BUILD_IMAGES, f));
+const sharpVersion = JSON.parse(readFileSync(path.join(DEPS, "package-lock.json"), "utf8")).packages["node_modules/sharp"].version;
 // Run npm without a shell where we can: as an npm script, npm_execpath is its own CLI (a shell on
 // Windows is deprecated by Node, since it concatenates the arguments).
 const npmArgs = [
-  "install",
-  `sharp@${sharpVersion}`,
+  "ci",
   "--prefix",
   BUILD_IMAGES,
   "--os=linux",
   "--cpu=x64",
   "--libc=glibc",
-  "--no-save",
-  "--no-package-lock",
+  "--omit=dev",
+  "--ignore-scripts",
   "--no-audit",
   "--no-fund",
 ];

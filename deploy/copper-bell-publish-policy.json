@@ -102,7 +102,7 @@
     },
     {
       "Effect": "Allow",
-      "Action": ["ssm:PutParameter", "ssm:DeleteParameter"],
+      "Action": ["ssm:PutParameter", "ssm:DeleteParameter", "ssm:AddTagsToResource", "ssm:ListTagsForResource"],
       "Resource": "arn:aws:ssm:us-east-1:724654236968:parameter/updraft/*"
     },
     {
