@@ -81,6 +81,7 @@ Resources:
 
   # Shop photos resized on request (images.mjs). CloudFront caches each size for a year, so this only
   # runs the first time a photo is asked for at a size. Its own package: sharp's Linux build (~10 MB).
+  # It reads the shop's catalog through the site (ALLOWED_ORIGIN) to check a photo is one of ours.
   ImagesLogs:
     Type: AWS::Logs::LogGroup
     Properties: { LogGroupName: !Sub "/updraft/${AWS::StackName}/images", RetentionInDays: 30 }
@@ -89,7 +90,9 @@ Resources:
     Properties:
       CodeUri: .build-images # the images bundle and sharp's Linux binaries, never the backend folder
       MemorySize: 1024 # encoding is CPU-bound, and Lambda gives CPU in proportion to memory
-      ReservedConcurrentExecutions: !If [CapConcurrency, 2, !Ref AWS::NoValue] # caps work anyone can cause with uncached sizes
+      # Only the catalog's photos are taken, so the work is bounded anyway; 5 at once lets a shop page's
+      # first visit after new pieces get resized copies instead of falling back to the originals.
+      ReservedConcurrentExecutions: !If [CapConcurrency, 5, !Ref AWS::NoValue]
       LoggingConfig: { LogGroup: !Ref ImagesLogs }
       FunctionUrlConfig:
         AuthType: AWS_IAM # see Api

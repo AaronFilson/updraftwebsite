@@ -7,6 +7,7 @@
 // and only then are files no longer in the build removed, so a cached page never points at
 // a deleted asset.
 import { execFileSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import path from "node:path";
 import { currentStage } from "./stage.mjs";
 
@@ -39,8 +40,10 @@ const sync = (label, ...args) => {
   console.log(`\n== ${label}`);
   const out = aws("s3", "sync", DIST, bucket, "--no-progress", ...(DRY ? ["--dryrun"] : []), ...args);
   process.stdout.write(out || "  (no changes)\n");
+  return out;
 };
 const hashed = ["--exclude", "*", "--include", "assets/*", "--include", "img/*", "--include", "full/*"];
+const isHashed = (file) => /^(assets|img|full)\//.test(file);
 
 // 1. Content-hashed files. JS and AVIF get explicit types: the CLI guesses types from the OS, and on
 //    Windows it labels .js as text/plain, which browsers refuse to run as a module (nosniff is on).
@@ -90,11 +93,20 @@ sync(
 ); // p.js
 sync("manifest", "--exclude", "*", "--include", "*.webmanifest", "--content-type", "application/manifest+json", "--cache-control", SHORT);
 // 3. Remove anything that is no longer part of the build.
-sync("remove old files", "--delete", "--size-only");
+const removed = sync("remove old files", "--delete", "--size-only");
 
+// 4. Clear CloudFront's copies of what isn't content-hashed (pages, p.js, manifest, robots, sitemap)
+//    and of anything just removed. Not "/*": that would also drop every resized shop photo under
+//    /api/img, and the next visitors would wait for all of them to be made again.
 if (!DRY) {
+  const built = readdirSync(DIST, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile())
+    .map((e) => path.relative(DIST, path.join(e.parentPath, e.name)).split(path.sep).join("/"));
+  const gone = [...removed.matchAll(/^delete: s3:\/\/[^/]+\/(.+)$/gm)].map((m) => m[1].trim());
+  const paths = [...new Set([...built, ...gone])].filter((f) => !isHashed(f)).map((f) => `/${encodeURI(f)}`);
+  if (paths.includes("/index.html")) paths.push("/"); // the home page is also cached as /
   const id = JSON.parse(
-    aws("cloudfront", "create-invalidation", "--distribution-id", outputs.DistributionId, "--paths", "/*", "--output", "json"),
+    aws("cloudfront", "create-invalidation", "--distribution-id", outputs.DistributionId, "--paths", ...paths, "--output", "json"),
   ).Invalidation.Id;
   console.log(`\nInvalidation ${id} started; changes are live within a few minutes.`);
   console.log(`Test URL: https://${outputs.DistributionDomain}/`);

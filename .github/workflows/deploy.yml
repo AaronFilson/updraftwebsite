@@ -2,7 +2,7 @@ name: Deploy
 
 # Deploys the API and publishes the site for one stage, from a commit that passed CI. No stored AWS
 # keys: GitHub signs in to AWS with OIDC and assumes updraft-github-deploy, which has the same
-# updraft-* permissions as the deploy user (deploy/copper-bell-publish-policy.json).
+# policy as the deploy user, updraft-publish-ssm (a copy is in deploy/copper-bell-publish-policy.json).
 #
 # Setup (once): deploy/README.md, "One-time admin setup", step 3.
 on:
@@ -45,6 +45,15 @@ jobs:
         run: |
           npm ci
           npm ci --prefix backend
+
+      # The photos CI encoded on master (ci.yml saves them; a deploy only reads), so only new or changed
+      # photos are encoded here. Entries are named by a hash of their inputs, so any older cache is safe.
+      - name: Restore encoded images
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/images
+          key: images-${{ hashFiles('site/images/**', 'scripts/build.mjs', 'package-lock.json') }}
+          restore-keys: images-
 
       - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:

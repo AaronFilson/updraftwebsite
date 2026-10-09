@@ -1,0 +1,8 @@
+{
+  "name": "updraft-images-deps",
+  "private": true,
+  "description": "What the photo function (backend/src/images.mjs) loads at run time: sharp. scripts/deploy-api.mjs installs it from this lockfile for Lambda's Linux x64, with install scripts off.",
+  "dependencies": {
+    "sharp": "0.35.5"
+  }
+}

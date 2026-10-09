@@ -36,7 +36,9 @@ export async function handler(event) {
     if (route && !routes.has(route)) return respond(404, { errors: ["Not found"] });
     if (method === "GET" && path === "/api/catalog")
       return respond(200, { items: await loadCatalog() }, { "cache-control": "public, max-age=15" });
-    if (method === "GET" && routes.has("piece") && path?.startsWith("/p/")) return await piece(decodeURIComponent(path.slice(3)));
+    // Square ids are plain letters and digits: the path is passed on as sent (piece() checks it), never
+    // decoded, since a malformed escape like /p/%E0 would throw and be answered as an unhandled error.
+    if (method === "GET" && routes.has("piece") && path?.startsWith("/p/")) return await piece(path.slice(3));
     if (method === "POST" && posts[path]) {
       const body = readBody(event);
       if (!body) return respond(400, { errors: ["Bad request."] });

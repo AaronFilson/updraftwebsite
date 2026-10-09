@@ -22,11 +22,13 @@ export const specLine = (description = "") =>
 export async function piece(id) {
   const site = ALLOWED_ORIGIN === "*" ? "" : ALLOWED_ORIGIN;
   const item = /^[A-Za-z0-9_-]{1,64}$/.test(id) ? (await loadCatalog()).find((i) => i.id === id) : undefined;
+  // 410 Gone, not 404: CloudFront swaps every 403/404 for the site's error page (deploy/site.yaml), and
+  // someone following an old share link should hear that the piece has gone, with a way to the shop.
   if (!item)
     return html(
-      404,
+      410,
       `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Piece not found · Updraft Pottery Studio</title>` +
-        `<meta name="viewport" content="width=device-width, initial-scale=1"></head><body>` +
+        `<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"></head><body>` +
         `<p>That piece isn't listed any more. <a href="/shop.html">See what's in the shop</a>.</p></body></html>`,
       "public, max-age=60",
     );
