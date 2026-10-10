@@ -260,6 +260,8 @@ async function bundle() {
     legalComments: "none",
     target: ["es2022", "safari16"],
     entryNames: "[name]-[hash]",
+    loader: { ".woff2": "file" }, // fonts become assets/NAME-HASH.woff2, cached for a year
+    publicPath: "/assets/", // the CSS is inlined into each page, so its font URLs must be absolute
     chunkNames: "[name]-[hash]",
     metafile: true,
     // site/js/config.js reads these; only public values (the Square token never reaches the browser).
@@ -275,6 +277,7 @@ async function bundle() {
   const names = {};
   for (const [out, info] of Object.entries(result.metafile.outputs)) {
     if (info.entryPoint) names[path.parse(info.entryPoint).name] = "assets/" + path.basename(out);
+    if (out.endsWith(".woff2")) names.font = "assets/" + path.basename(out);
   }
   return names;
 }
@@ -371,7 +374,8 @@ const common = (current, js = assets.site) => ({
   "<!--header-->": header.replace("{{nav}}", nav(current)),
   "<!--footer-->": footer,
   // ~4KB gzipped: inlining saves a render-blocking request on every page.
-  "{{css}}": `<style>${css}</style>`,
+  // Fetch the heading font alongside the page instead of after the CSS is read, so the headline swaps less.
+  "{{css}}": `<link rel="preload" href="/${assets.font}" as="font" type="font/woff2" crossorigin><style>${css}</style>`,
   "{{js}}": "/" + js,
   "{{year}}": String(new Date().getFullYear()),
   "{{og}}": SITE_URL + og,

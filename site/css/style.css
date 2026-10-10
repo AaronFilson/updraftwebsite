@@ -1,3 +1,12 @@
+/* Lora (SIL Open Font License, site/fonts/OFL.txt), served from the site itself: one variable file covers
+   weights 400-700 for Latin text, including the ½ and ″ in the spec lines. */
+@font-face {
+  font-family: "Lora";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("../fonts/lora.woff2") format("woff2");
+}
 :root {
   /* "Fir & celadon": a quiet near-white so the warm stoneware carries the color, with a fir/celadon
      green accent from the glazes and evergreens. Every pairing passes WCAG AA (body text >= 7:1). */
@@ -11,11 +20,12 @@
   --control: #7a817a; /* borders on inputs/buttons: >= 3:1 against bg and surface */
   --radius: 14px;
   --shadow: 0 1px 2px rgb(30 35 32 / 0.06), 0 8px 24px rgb(30 35 32 / 0.08);
-  /* Palatino-style headings everywhere: Iowan (Apple), Palatino Linotype (Windows), then Palatino clones
-     with the same letter widths that Linux usually has (P052 / URW Palladio L from the standard printing
-     fonts, TeX Gyre Pagella with TeX), so its wide default serif never breaks the headline mid-phrase. */
-  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, P052, "URW Palladio L", "TeX Gyre Pagella", Georgia, serif;
-  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Lora for headings. Until it loads (or if it can't), Georgia, which nearly every Mac, Windows PC, iPhone and
+     Android has and which is close to Lora's shape; then Palatino and its Linux clones (P052 / URW Palladio L,
+     TeX Gyre Pagella), so Linux's wide default serif never breaks the headline mid-phrase. */
+  --serif: Lora, Georgia, "Palatino Linotype", Palatino, P052, "URW Palladio L", "TeX Gyre Pagella", serif;
+  /* All text is Lora too; --sans keeps its name so the rest of the stylesheet needn't change. */
+  --sans: var(--serif);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
