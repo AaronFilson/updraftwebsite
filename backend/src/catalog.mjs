@@ -2,6 +2,15 @@
 import { SQUARE_LOCATION_ID, square, onSquareReset } from "./config.mjs";
 import { applyRecentSales, stockOf, soldLines } from "./stock.mjs";
 
+// Billed shipping weight in lb of one packed piece: a catalog custom attribute on the item, set when
+// the piece is listed (see README.md, "Selling"). A piece without one can't be shipped, only picked up.
+export const SHIP_LB_KEY = "ship_lb";
+const shipLbOf = (item) => {
+  const v = Object.values(item.customAttributeValues ?? {}).find((x) => x?.key === SHIP_LB_KEY);
+  const lb = Number(v?.numberValue);
+  return lb > 0 ? lb : null;
+};
+
 // Short, so a piece that sells shows "Sold" quickly; checkout always re-reads live stock anyway.
 const CATALOG_TTL_MS = 15_000;
 let cache = { at: 0, items: [], info: new Map() };
@@ -51,7 +60,12 @@ export async function loadCatalog() {
           const d = v.itemVariationData;
           const here = d.locationOverrides?.find((x) => x.locationId === SQUARE_LOCATION_ID);
           const name = o.itemData.variations.length > 1 ? `${o.itemData.name} (${d.name})` : o.itemData.name;
-          info.set(v.id, { name, tracked: Boolean(here?.trackInventory ?? d.trackInventory), soldOut: Boolean(here?.soldOut) });
+          info.set(v.id, {
+            name,
+            tracked: Boolean(here?.trackInventory ?? d.trackInventory),
+            soldOut: Boolean(here?.soldOut),
+            shipLb: shipLbOf(o),
+          });
           return { id: v.id, name: d.name, price: Number(d.priceMoney.amount), currency: d.priceMoney.currency };
         }),
     }))
@@ -76,4 +90,17 @@ export async function checkStock(lines) {
 export async function unknownLines(lines) {
   const known = new Set((await loadCatalog()).flatMap((i) => i.variations.map((v) => v.id)));
   return lines.some((l) => !known.has(l.variationId));
+}
+
+// One billed weight per piece in the cart, for pricing shipping; names any piece that has none.
+export async function shipWeights(lines) {
+  await loadCatalog();
+  const weights = [];
+  const missing = [];
+  for (const l of lines) {
+    const i = cache.info.get(l.variationId);
+    if (i?.shipLb) weights.push(...Array(l.quantity).fill(i.shipLb));
+    else missing.push(i?.name ?? "An item");
+  }
+  return { weights, missing };
 }

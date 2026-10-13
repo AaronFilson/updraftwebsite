@@ -116,8 +116,11 @@ export const removedMessage = (/** @type {string} */ message, /** @type {number}
 export const subtotal = (cart) => cart.reduce((n, l) => n + l.price * l.quantity, 0);
 
 /** Identifies a cart + fulfillment for tax quotes, so an unchanged cart isn't looked up again. */
-export const quoteKey = (/** @type {Line[]} */ cart, /** @type {string} */ fulfillment) =>
-  JSON.stringify([cart.map((l) => [l.variationId, l.quantity]), fulfillment]);
+export const quoteKey = (
+  /** @type {Line[]} */ cart,
+  /** @type {string} */ fulfillment,
+  /** @type {{state: string, postalCode: string, line1: string, line2: string} | null} */ destination = null,
+) => JSON.stringify([cart.map((l) => [l.variationId, l.quantity]), fulfillment, destination]);
 
 /** Optional phone: empty is fine, otherwise 10-15 digits in any common format. */
 export function phoneOk(/** @type {string} */ value) {

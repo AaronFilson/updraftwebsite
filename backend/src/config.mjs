@@ -3,13 +3,7 @@
 // cold start; SQUARE_ACCESS_TOKEN is only for local runs and tests.
 import { SquareClient, SquareEnvironment } from "square";
 
-export const {
-  SQUARE_LOCATION_ID,
-  SQUARE_ENV = "sandbox",
-  SHIPPING_CENTS = "0",
-  ALLOWED_ORIGIN = "*",
-  NEWSLETTER_GROUP_ID = "",
-} = process.env;
+export const { SQUARE_LOCATION_ID, SQUARE_ENV = "sandbox", ALLOWED_ORIGIN = "*", NEWSLETTER_GROUP_ID = "" } = process.env;
 
 let tokenPromise;
 export function squareToken() {

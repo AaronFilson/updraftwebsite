@@ -40,6 +40,8 @@ The build:
 
 Products come straight from your Square catalog. Add items in Square Dashboard > Items & services, with a price and a photo. They appear on the shop within a minute. Shop prices and tax are always calculated by Square on the server.
 
+**Shipping** is priced per piece, from the delivery ZIP: one double-boxed parcel per piece, at the published label price for its billed weight and zone from Tacoma, rounded up to whole dollars (`backend/src/shipping.mjs`). UPS Ground carries everything it can; USPS Ground Advantage takes PO boxes, military addresses, Alaska, Hawaii and the territories. Each item needs a **Ship weight (lb)** custom attribute in Square: the billed weight of the packed box (the larger of actual and dimensional weight, from the pack-and-ship planner). An item without one can be picked up but not shipped. Rates and zones live in `backend/src/shipping-rates.json`; update it when UPS or USPS change prices (USPS holiday prices end 2027-01-17; the UPS fuel surcharge changes weekly).
+
 ## Email signup
 
 The "First look at new work" form posts to `/api/subscribe`, which adds the address to your Square customer directory (existing customers are matched by email, not duplicated). To keep website signups separate, create a customer group in Square Dashboard > Customers > Groups (e.g. "Website newsletter"), and pass its id as `NewsletterGroupId` when deploying the API. Send emails to that group with Square Marketing. Check Square's email-marketing consent rules before your first campaign.
@@ -49,7 +51,7 @@ Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and eac
 ## Setup
 
 1. **Square app**: [developer.squareup.com](https://developer.squareup.com/apps) > create an application. Note the Application ID, the Access Token (sandbox first) and your Location ID.
-2. **Deploy the API**: put the stage's public Square settings (`squareAppId`, `squareLocationId`, `squareEnv`, `shippingCents`) in `deploy/stages.json`. Put the access token in `backend/.env` (git-ignored) and run `npm run put-token`, which stores it in SSM Parameter Store. Then `npm run deploy:api` and `npm run publish`. Add `-- --stage staging` to any of these for the staging site. Details are in [`deploy/README.md`](deploy/README.md).
+2. **Deploy the API**: put the stage's public Square settings (`squareAppId`, `squareLocationId`, `squareEnv`) in `deploy/stages.json`. Put the access token in `backend/.env` (git-ignored) and run `npm run put-token`, which stores it in SSM Parameter Store. Then `npm run deploy:api` and `npm run publish`. Add `-- --stage staging` to any of these for the staging site. Details are in [`deploy/README.md`](deploy/README.md).
 3. **Site hosting**: S3 bucket (private) + CloudFront with Origin Access Control, default root object `index.html`, custom error response 404 -> `/error.html`, and an ACM certificate for your domain. Turn on **Compress objects automatically** (gzip/Brotli) in the CloudFront cache behavior. Upload the content-hashed folders with long caching and everything else (HTML, favicon, manifest, robots, sitemap) with short caching:
    ```
    aws s3 sync dist/ s3://YOUR-BUCKET --delete --exclude "*" --include "assets/*" --include "img/*" --include "full/*" --cache-control "public,max-age=31536000,immutable"

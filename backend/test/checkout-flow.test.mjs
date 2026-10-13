@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handler, _setSquare, _resetLimits, clientIp } from "../src/handler.mjs";
 
-function fakeSquare({ stock = 1, fail = null } = {}) {
+function fakeSquare({ stock = 1, fail = null, shipLb = 20 } = {}) {
   const orderStore = new Map(),
     byKey = new Map(),
     paymentStore = new Map();
@@ -27,6 +27,7 @@ function fakeSquare({ stock = 1, fail = null } = {}) {
           {
             type: "ITEM",
             id: "I1",
+            ...(shipLb && { customAttributeValues: { ship_lb: { key: "ship_lb", type: "NUMBER", numberValue: String(shipLb) } } }),
             itemData: {
               name: "Celadon bowl",
               variations: [
@@ -40,7 +41,12 @@ function fakeSquare({ stock = 1, fail = null } = {}) {
       batchGetCounts: async () => iter([{ catalogObjectId: "V1", quantity: String(stock), calculatedAt: "2000-01-01T00:00:00Z" }]),
     },
     orders: {
-      calculate: async () => ({ order: { totalMoney: { amount: 5000n }, totalTaxMoney: { amount: 0n } } }),
+      calculate: async ({ order: req }) => {
+        fakeCalls.calculate = req;
+        // Custom-amount lines (shipping) add their price; the catalog piece is $50.
+        const ship = req.lineItems.reduce((n, l) => n + (l.basePriceMoney?.amount ?? 0n), 0n);
+        return { order: { totalMoney: { amount: 5000n + ship }, totalTaxMoney: { amount: 0n } } };
+      },
       create: async ({ idempotencyKey, order: req }) => {
         fakeCalls.order = req;
         if (!byKey.has(idempotencyKey)) {
@@ -102,8 +108,8 @@ const body = (key) => ({
   email: "a@b.co",
   billing: { line1: "1 Main St", city: "Tacoma", state: "WA", postalCode: "98402" },
 });
-const post = async (b) => {
-  const r = await handler({ requestContext: { http: { method: "POST" } }, rawPath: "/api/checkout", body: JSON.stringify(b) });
+const post = async (b, path = "/api/checkout") => {
+  const r = await handler({ requestContext: { http: { method: "POST" } }, rawPath: path, body: JSON.stringify(b) });
   return { status: r.statusCode, body: JSON.parse(r.body) };
 };
 const fresh = (opts) => {
@@ -230,4 +236,47 @@ test("notes are trimmed, capped at 500 and stripped of control characters", () =
   assert.equal(cleanNote("a\n\n\n\nb"), "a\n\nb");
   assert.equal(cleanNote("x".repeat(900)).length, 500);
   assert.equal(cleanNote(42), "");
+});
+
+const shipTo = { name: "Gift Person", line1: "5 Pine St", city: "Brooklyn", state: "NY", postalCode: "11201" };
+test("a shipped order is charged one UPS label per piece, priced for its zone", async () => {
+  const sq = fresh({ shipLb: 23 });
+  assert.equal((await post({ ...body("s1"), fulfillment: "shipping", shipping: shipTo })).status, 200);
+  const charge = sq.fakeCalls.order.lineItems.at(-1); // a custom-amount line, so Square's taxes can apply to it
+  assert.equal(charge.name, "Shipping (UPS Ground)");
+  assert.equal(charge.basePriceMoney.amount, 7300n); // 23 lb to zone 8 is $72.03, rounded up to whole dollars
+  assert.equal(sq.fakeCalls.order.fulfillments[0].shipmentDetails.carrier, "UPS Ground");
+});
+test("a PO box goes by USPS", async () => {
+  const sq = fresh({ shipLb: 23 });
+  const res = await post({ ...body("s2"), fulfillment: "shipping", shipping: { ...shipTo, line1: "PO Box 12" } });
+  assert.equal(res.status, 200);
+  assert.equal(sq.fakeCalls.order.lineItems.at(-1).name, "Shipping (USPS Ground Advantage)");
+});
+test("a piece without a shipping weight can be picked up but not shipped", async () => {
+  fresh({ shipLb: 0 });
+  assert.equal((await post(body("s3"))).status, 200);
+  const res = await post({ ...body("s4"), fulfillment: "shipping", shipping: shipTo });
+  assert.equal(res.status, 400);
+  assert.match(res.body.errors[0], /Celadon bowl can't be shipped yet/);
+  // The quote says so as soon as Shipping is chosen, before any address.
+  fresh({ shipLb: 0 }); // the piece sold above
+  const early = await post({ lines: [{ variationId: "V1", quantity: 1 }], fulfillment: "shipping" }, "/api/quote");
+  assert.equal(early.status, 400);
+  assert.match(early.body.errors[0], /can't be shipped yet/);
+});
+test("a shipping quote needs the destination before it has a total", async () => {
+  fresh({ shipLb: 23 });
+  const lines = [{ variationId: "V1", quantity: 1 }];
+  const before = await post({ lines, fulfillment: "shipping" }, "/api/quote");
+  assert.equal(before.status, 200);
+  assert.equal(before.body.shipping, null);
+  assert.equal(before.body.total, null);
+  const after = await post(
+    { lines, fulfillment: "shipping", destination: { state: "WA", postalCode: "98101", line1: "5 Pine St" } },
+    "/api/quote",
+  );
+  assert.deepEqual([after.body.shipping, after.body.carrier, after.body.total], [3500, "UPS Ground", 8500]);
+  const pickup = await post({ lines, fulfillment: "pickup" }, "/api/quote");
+  assert.deepEqual([pickup.body.shipping, pickup.body.total], [0, 5000]);
 });

@@ -7,4 +7,4 @@ globalThis.localStorage = {
   clear: () => store.clear(),
 };
 globalThis.document = new EventTarget(); // cart.js announces changes with document.dispatchEvent
-globalThis.__SITE_CONFIG__ = { squareEnv: "sandbox", squareAppId: "test-app", squareLocationId: "test-location", shippingCents: 0 };
+globalThis.__SITE_CONFIG__ = { squareEnv: "sandbox", squareAppId: "test-app", squareLocationId: "test-location" };

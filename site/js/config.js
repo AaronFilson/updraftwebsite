@@ -2,5 +2,5 @@
 // stage being built (scripts/build.mjs defines __SITE_CONFIG__). The access token never reaches the browser.
 export const config = {
   apiBase: "", // same origin: CloudFront routes /api/* to the Lambda functions
-  ...__SITE_CONFIG__, // squareEnv, squareAppId, squareLocationId, shippingCents
+  ...__SITE_CONFIG__, // squareEnv, squareAppId, squareLocationId
 };

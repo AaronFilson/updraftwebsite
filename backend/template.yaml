@@ -8,7 +8,6 @@ Parameters:
   SquareTokenParam: { Type: String, Description: "SSM SecureString holding the Square access token, e.g. /updraft/prod/square-access-token" }
   SquareLocationId: { Type: String }
   SquareEnv: { Type: String, Default: sandbox, AllowedValues: [sandbox, production] }
-  ShippingCents: { Type: String, Default: "0" }
   SiteOrigin: { Type: String, Description: "e.g. https://updraftpotterystudio.com (used for CORS)" }
   ApiConcurrency: { Type: Number, Default: 5, Description: "Max concurrent API invocations (abuse cap). 0 = no reservation (needed on new accounts with low Lambda limits)" }
   NewsletterGroupId: { Type: String, Default: "", Description: "Optional Square customer group id that website signups are added to" }
@@ -35,7 +34,6 @@ Globals:
         SQUARE_TOKEN_PARAM: !Ref SquareTokenParam
         SQUARE_LOCATION_ID: !Ref SquareLocationId
         SQUARE_ENV: !Ref SquareEnv
-        SHIPPING_CENTS: !Ref ShippingCents
         ALLOWED_ORIGIN: !Ref SiteOrigin
         NEWSLETTER_GROUP_ID: !Ref NewsletterGroupId
 
