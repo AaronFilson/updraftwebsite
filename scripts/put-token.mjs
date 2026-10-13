@@ -14,11 +14,17 @@ const stage = currentStage();
 
 let token = process.env.SQUARE_ACCESS_TOKEN;
 const envFile = path.join(ROOT, "backend", ".env");
-if (!token && existsSync(envFile))
+// backend/.env holds the sandbox token, so a production stage only takes one from the environment.
+if (!token && stage.squareEnv !== "production" && existsSync(envFile))
   token = readFileSync(envFile, "utf8")
     .match(/^\s*SQUARE_ACCESS_TOKEN\s*=\s*['"]?([^'"\r\n]+)/m)?.[1]
     ?.trim();
-if (!token) throw new Error("No token: set SQUARE_ACCESS_TOKEN or put it in backend/.env (git-ignored).");
+if (!token)
+  throw new Error(
+    stage.squareEnv === "production"
+      ? `Stage "${stage.name}" uses Square production: set SQUARE_ACCESS_TOKEN to the production token first.`
+      : "No token: set SQUARE_ACCESS_TOKEN or put it in backend/.env (git-ignored).",
+  );
 if (stage.squareEnv === "sandbox" && !token.startsWith("EAAA")) console.warn("Note: sandbox access tokens usually start with EAAA.");
 
 const file = path.join(tmpdir(), `updraft-token-${process.pid}.json`);
