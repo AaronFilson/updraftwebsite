@@ -103,21 +103,17 @@ async function shippingFor(b, address) {
 }
 
 // The parts of the order that decide its price; shared by /api/quote and /api/checkout so they always agree.
+// Shipping is a custom-amount line, not a service charge: Square's auto-applied taxes skip service
+// charges, but tax custom amounts when the tax is set to (Washington taxes shipping on taxable goods).
 function priceableOrder(b, ship) {
-  return {
-    locationId: SQUARE_LOCATION_ID,
-    lineItems: b.lines.map((l) => ({ catalogObjectId: l.variationId, quantity: String(l.quantity) })),
-    pricingOptions: { autoApplyTaxes: true },
-    serviceCharges: ship?.cents
-      ? [
-          {
-            name: `Shipping (${CARRIER_NAMES[ship.carrier]})`,
-            amountMoney: { amount: BigInt(ship.cents), currency: "USD" },
-            calculationPhase: "SUBTOTAL_PHASE",
-          },
-        ]
-      : undefined,
-  };
+  const lineItems = b.lines.map((l) => ({ catalogObjectId: l.variationId, quantity: String(l.quantity) }));
+  if (ship?.cents)
+    lineItems.push({
+      name: `Shipping (${CARRIER_NAMES[ship.carrier]})`,
+      quantity: "1",
+      basePriceMoney: { amount: BigInt(ship.cents), currency: "USD" },
+    });
+  return { locationId: SQUARE_LOCATION_ID, lineItems, pricingOptions: { autoApplyTaxes: true } };
 }
 
 // Where a quote's parcels go: just enough of the address to price shipping (ZIP, state, PO box or not).
@@ -149,13 +145,12 @@ export async function quote(b) {
   const ship = b.fulfillment === "shipping" && !destination ? null : await shippingFor(b, destination);
   if (ship?.error) return respond(400, { errors: [ship.error] });
   const { order } = await square().orders.calculate({ order: priceableOrder(b, ship) });
-  const shipping = ship ? Number(order.totalServiceChargeMoney?.amount ?? 0) : null;
+  const tax = Number(order.totalTaxMoney?.amount ?? 0);
   return respond(200, {
-    subtotal:
-      Number(order.totalMoney.amount) - Number(order.totalTaxMoney?.amount ?? 0) - Number(order.totalServiceChargeMoney?.amount ?? 0),
-    shipping,
+    subtotal: Number(order.totalMoney.amount) - tax - (ship?.cents ?? 0),
+    shipping: ship ? ship.cents : null,
     carrier: ship?.carrier ? CARRIER_NAMES[ship.carrier] : undefined,
-    tax: Number(order.totalTaxMoney?.amount ?? 0),
+    tax,
     total: ship ? Number(order.totalMoney.amount) : null,
   });
 }

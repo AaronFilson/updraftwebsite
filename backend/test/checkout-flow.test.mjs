@@ -43,10 +43,9 @@ function fakeSquare({ stock = 1, fail = null, shipLb = 20 } = {}) {
     orders: {
       calculate: async ({ order: req }) => {
         fakeCalls.calculate = req;
-        const ship = (req.serviceCharges ?? []).reduce((n, c) => n + c.amountMoney.amount, 0n);
-        return {
-          order: { totalMoney: { amount: 5000n + ship }, totalTaxMoney: { amount: 0n }, totalServiceChargeMoney: { amount: ship } },
-        };
+        // Custom-amount lines (shipping) add their price; the catalog piece is $50.
+        const ship = req.lineItems.reduce((n, l) => n + (l.basePriceMoney?.amount ?? 0n), 0n);
+        return { order: { totalMoney: { amount: 5000n + ship }, totalTaxMoney: { amount: 0n } } };
       },
       create: async ({ idempotencyKey, order: req }) => {
         fakeCalls.order = req;
@@ -243,16 +242,16 @@ const shipTo = { name: "Gift Person", line1: "5 Pine St", city: "Brooklyn", stat
 test("a shipped order is charged one UPS label per piece, priced for its zone", async () => {
   const sq = fresh({ shipLb: 23 });
   assert.equal((await post({ ...body("s1"), fulfillment: "shipping", shipping: shipTo })).status, 200);
-  const [charge] = sq.fakeCalls.order.serviceCharges;
+  const charge = sq.fakeCalls.order.lineItems.at(-1); // a custom-amount line, so Square's taxes can apply to it
   assert.equal(charge.name, "Shipping (UPS Ground)");
-  assert.equal(charge.amountMoney.amount, 7300n); // 23 lb to zone 8 is $72.03, rounded up to whole dollars
+  assert.equal(charge.basePriceMoney.amount, 7300n); // 23 lb to zone 8 is $72.03, rounded up to whole dollars
   assert.equal(sq.fakeCalls.order.fulfillments[0].shipmentDetails.carrier, "UPS Ground");
 });
 test("a PO box goes by USPS", async () => {
   const sq = fresh({ shipLb: 23 });
   const res = await post({ ...body("s2"), fulfillment: "shipping", shipping: { ...shipTo, line1: "PO Box 12" } });
   assert.equal(res.status, 200);
-  assert.equal(sq.fakeCalls.order.serviceCharges[0].name, "Shipping (USPS Ground Advantage)");
+  assert.equal(sq.fakeCalls.order.lineItems.at(-1).name, "Shipping (USPS Ground Advantage)");
 });
 test("a piece without a shipping weight can be picked up but not shipped", async () => {
   fresh({ shipLb: 0 });
