@@ -44,7 +44,7 @@ Products come straight from your Square catalog. Add items in Square Dashboard >
 
 ## Email signup
 
-The "First look at new work" form posts to `/api/subscribe`, which adds the address to your Square customer directory (existing customers are matched by email, not duplicated). To keep website signups separate, create a customer group in Square Dashboard > Customers > Groups (e.g. "Website newsletter"), and pass its id as `NewsletterGroupId` when deploying the API. Send emails to that group with Square Marketing. Check Square's email-marketing consent rules before your first campaign.
+The "First look at new work" form posts to `/api/subscribe`, which adds the address to your Square customer directory (existing customers are matched by email, not duplicated). To keep website signups separate, they also go into a "Website newsletter" customer group: run `node scripts/newsletter-group.mjs` (`--stage staging` for staging), which finds or creates the group and prints its id, put that id in the stage's `newsletterGroupId` in `deploy/stages.json`, and run `npm run deploy:api`. An id from the wrong Square account (sandbox vs production) makes every signup fail. Send emails to that group with Square Marketing. Check Square's email-marketing consent rules before your first campaign.
 
 Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and each running instance allows 5 signup attempts per IP per 10 minutes and ignores repeat signups of the same address within an hour. New AWS accounts with a low Lambda concurrency quota can't reserve concurrency; deploy with `ApiConcurrency=0` there.
 
