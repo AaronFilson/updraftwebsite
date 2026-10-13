@@ -1,9 +1,10 @@
 // POST /api/quote and POST /api/checkout. Prices always come from Square, never from the browser.
 // Checkout authorises the card, re-checks stock, then completes the charge or releases the hold.
 import { randomUUID } from "node:crypto";
-import { SQUARE_LOCATION_ID, SHIPPING_CENTS, square } from "./config.mjs";
+import { SQUARE_LOCATION_ID, square } from "./config.mjs";
 import { respond, EMAIL_RE } from "./http.mjs";
-import { checkStock, unknownLines } from "./catalog.mjs";
+import { checkStock, shipWeights, unknownLines } from "./catalog.mjs";
+import { shippingCents } from "./shipping.mjs";
 import { recordSale } from "./stock.mjs";
 
 const MAX_LINES = 20;
@@ -89,21 +90,49 @@ const squareAddress = (a, name) => {
   };
 };
 
+const CARRIER_NAMES = { ups: "UPS Ground", usps: "USPS Ground Advantage" };
+
+const cantShip = (names) => `${names.join(" and ")} can't be shipped yet. Please choose pickup, or email to ask about shipping.`;
+
+// Shipping for the cart to this address: { cents, carrier } or { error }. Pickup is free.
+async function shippingFor(b, address) {
+  if (b.fulfillment !== "shipping") return { cents: 0 };
+  const { weights, missing } = await shipWeights(b.lines);
+  if (missing.length) return { error: cantShip(missing) };
+  return shippingCents(weights, address);
+}
+
 // The parts of the order that decide its price; shared by /api/quote and /api/checkout so they always agree.
-function priceableOrder(b) {
-  const shipping = Number(SHIPPING_CENTS);
+function priceableOrder(b, ship) {
   return {
     locationId: SQUARE_LOCATION_ID,
     lineItems: b.lines.map((l) => ({ catalogObjectId: l.variationId, quantity: String(l.quantity) })),
     pricingOptions: { autoApplyTaxes: true },
-    serviceCharges:
-      b.fulfillment === "shipping" && shipping > 0
-        ? [{ name: "Shipping", amountMoney: { amount: BigInt(shipping), currency: "USD" }, calculationPhase: "SUBTOTAL_PHASE" }]
-        : undefined,
+    serviceCharges: ship?.cents
+      ? [
+          {
+            name: `Shipping (${CARRIER_NAMES[ship.carrier]})`,
+            amountMoney: { amount: BigInt(ship.cents), currency: "USD" },
+            calculationPhase: "SUBTOTAL_PHASE",
+          },
+        ]
+      : undefined,
   };
 }
 
-// Tax and total for the cart, before paying. Nothing is created in Square.
+// Where a quote's parcels go: just enough of the address to price shipping (ZIP, state, PO box or not).
+function cleanDestination(d) {
+  const out = {
+    state: text(d?.state, 20).toUpperCase(),
+    postalCode: text(d?.postalCode, 20),
+    line1: text(d?.line1),
+    line2: text(d?.line2),
+  };
+  return STATE_RE.test(out.state) && ZIP_RE.test(out.postalCode) ? out : null;
+}
+
+// Tax and total for the cart, before paying. Nothing is created in Square. For shipping, the
+// shipping charge needs the destination; without one the reply has shipping: null and no total yet.
 export async function quote(b) {
   const errors = [];
   validateLines(b, errors);
@@ -111,13 +140,23 @@ export async function quote(b) {
   if (await unknownLines(b.lines)) return respond(400, { errors: ["An item is no longer available."] });
   const sold = await checkStock(b.lines);
   if (sold.length) return soldResponse(sold);
-  const { order } = await square().orders.calculate({ order: priceableOrder(b) });
+  const destination = b.fulfillment === "shipping" ? cleanDestination(b.destination) : null;
+  if (b.fulfillment === "shipping" && !destination) {
+    // No address yet, but a piece that can't be shipped at all is worth saying straight away.
+    const { missing } = await shipWeights(b.lines);
+    if (missing.length) return respond(400, { errors: [cantShip(missing)] });
+  }
+  const ship = b.fulfillment === "shipping" && !destination ? null : await shippingFor(b, destination);
+  if (ship?.error) return respond(400, { errors: [ship.error] });
+  const { order } = await square().orders.calculate({ order: priceableOrder(b, ship) });
+  const shipping = ship ? Number(order.totalServiceChargeMoney?.amount ?? 0) : null;
   return respond(200, {
     subtotal:
       Number(order.totalMoney.amount) - Number(order.totalTaxMoney?.amount ?? 0) - Number(order.totalServiceChargeMoney?.amount ?? 0),
-    shipping: Number(order.totalServiceChargeMoney?.amount ?? 0),
+    shipping,
+    carrier: ship?.carrier ? CARRIER_NAMES[ship.carrier] : undefined,
     tax: Number(order.totalTaxMoney?.amount ?? 0),
-    total: Number(order.totalMoney.amount),
+    total: ship ? Number(order.totalMoney.amount) : null,
   });
 }
 
@@ -137,6 +176,8 @@ export async function checkout(b) {
   const { errors, billing, shipping } = validateCheckout(b);
   if (errors.length) return respond(400, { errors });
   if (await unknownLines(b.lines)) return respond(400, { errors: ["An item is no longer available."] });
+  const ship = await shippingFor(b, shipping);
+  if (ship.error) return respond(400, { errors: [ship.error] });
   const name = text(b.name);
   const phone = cleanPhone(b.phone);
   const note = cleanNote(b.note);
@@ -151,6 +192,7 @@ export async function checkout(b) {
             phoneNumber: phone,
             address: squareAddress(shipping, shipping.name),
           },
+          carrier: CARRIER_NAMES[ship.carrier],
           shippingNote: note || undefined,
         },
       }
@@ -168,7 +210,7 @@ export async function checkout(b) {
   if (soldBefore.length) {
     if (validKey(b.idempotencyKey)) {
       const paid = await alreadyPaid(
-        { idempotencyKey: `o-${b.idempotencyKey}`, order: { ...priceableOrder(b), fulfillments: [fulfillment] } },
+        { idempotencyKey: `o-${b.idempotencyKey}`, order: { ...priceableOrder(b, ship), fulfillments: [fulfillment] } },
         b.idempotencyKey,
       );
       if (paid) return paid;
@@ -179,14 +221,14 @@ export async function checkout(b) {
   // Never charge something other than what the customer was shown (prices or tax changed meanwhile).
   // Checked with a calculation first, so a mismatch doesn't leave an unpaid order behind in Square.
   if (Number.isInteger(b.expectedTotal)) {
-    const { order: preview } = await square().orders.calculate({ order: priceableOrder(b) });
+    const { order: preview } = await square().orders.calculate({ order: priceableOrder(b, ship) });
     const now = Number(preview.totalMoney.amount);
     if (now !== b.expectedTotal)
       return respond(409, { errors: ["The total changed since it was shown. Please check the new total and pay again."], total: now });
   }
 
   const key = validKey(b.idempotencyKey) ? b.idempotencyKey : randomUUID();
-  const orderRequest = { idempotencyKey: `o-${key}`, order: { ...priceableOrder(b), fulfillments: [fulfillment] } };
+  const orderRequest = { idempotencyKey: `o-${key}`, order: { ...priceableOrder(b, ship), fulfillments: [fulfillment] } };
   const { order } = await square().orders.create(orderRequest);
   const total = Number(order.totalMoney.amount);
 

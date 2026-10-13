@@ -95,11 +95,36 @@ test("checkout form: billing is required, shipping fields appear only when shipp
   await expect(page.locator("input[name=shipLine1]")).toHaveAttribute("required", "");
 });
 
+test("shipping is priced from the delivery address before anything can be paid", async ({ page }) => {
+  const calls = await mockApi(page, {
+    items: [mug],
+    quote: (route, body) =>
+      route.fulfill({
+        json: body.destination
+          ? { subtotal: 3000, shipping: 4500, carrier: "UPS Ground", tax: 300, total: 7800 }
+          : { subtotal: 3000, shipping: null, tax: 300, total: null },
+      }),
+  });
+  await page.goto("/shop.html");
+  await card(page, "Everyday mug").getByRole("button").click();
+  await page.getByLabel("Shipping (US)").check();
+  await expect(page.locator("#t-ship")).toHaveText("Enter address");
+  await expect(page.locator("#pay")).toHaveText("Pay $30.00 + shipping + tax");
+  await fillCheckout(page);
+  await page.locator("input[name=billZip]").blur();
+  await expect(page.locator("#t-ship")).toHaveText("$45.00");
+  await expect(page.locator("#quote-status")).toHaveText("Shipping $45.00 by UPS Ground. Sales tax $3.00. Total $78.00.");
+  await expect(page.locator("#pay")).toHaveText("Pay $78.00");
+  expect(calls.quote.at(-1).destination).toEqual({ line1: "1 Main St", line2: "", state: "WA", postalCode: "98402" });
+});
+
 test("checkout sends billing, shipping, note and the quoted total, signed with the body hash", async ({ page }) => {
   const calls = await mockApi(page, { items: [mug] });
   await page.goto("/shop.html");
   await card(page, "Everyday mug").getByRole("button").click();
   await fillCheckout(page, { shipping: true });
+  await page.locator("input[name=billZip]").blur();
+  await expect(page.locator("#pay")).toHaveText("Pay $33.00"); // priced for the billing address; settles the layout
   await page.getByLabel("Ship to my billing address").uncheck();
   await page.locator("input[name=shipName]").fill("Gift Person");
   await page.locator("input[name=shipLine1]").fill("5 Pine St");

@@ -5,7 +5,6 @@ declare const __SITE_CONFIG__: {
   squareEnv: "sandbox" | "production";
   squareAppId: string;
   squareLocationId: string;
-  shippingCents: number;
 };
 
 interface Window {

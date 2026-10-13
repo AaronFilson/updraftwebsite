@@ -30,6 +30,9 @@ export async function mockApi(page, { items = [], taxRate = 0.1, quote, checkout
     if (quote) return quote(route, body);
     const subtotal = body.lines.reduce((n, l) => n + priceOf(l.variationId) * l.quantity, 0);
     const tax = Math.round(subtotal * taxRate);
+    // Like the API: a shipped order has no shipping charge or total until it has a destination.
+    if (body.fulfillment === "shipping" && !body.destination)
+      return route.fulfill({ json: { subtotal, shipping: null, tax, total: null } });
     return route.fulfill({ json: { subtotal, shipping: 0, tax, total: subtotal + tax } });
   });
   await page.route("**/api/checkout", async (route) => {

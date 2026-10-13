@@ -270,7 +270,6 @@ async function bundle() {
         squareEnv: STAGE.squareEnv,
         squareAppId: STAGE.squareAppId,
         squareLocationId: STAGE.squareLocationId,
-        shippingCents: STAGE.shippingCents,
       }),
     },
   });

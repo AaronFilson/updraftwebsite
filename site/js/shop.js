@@ -266,6 +266,16 @@ const isShipping = () => form.fulfillment.value === "shipping";
 const shipSeparately = () => isShipping() && !form.shipSame.checked;
 const subtotal = () => cartSubtotal(getCart());
 
+// Where a shipped order goes (the shipping fields, or billing when they're the same), as far as
+// pricing shipping needs it; null until there is a ZIP and state to price it with.
+function shipDestination() {
+  if (!isShipping()) return null;
+  const p = shipSeparately() ? "ship" : "bill";
+  const val = (/** @type {string} */ k) => String(form[`${p}${k}`]?.value ?? "").trim();
+  const d = { line1: val("Line1"), line2: val("Line2"), state: val("State").toUpperCase(), postalCode: val("Zip") };
+  return /^[A-Z]{2}$/.test(d.state) && /^\d{5}(-\d{4})?$/.test(d.postalCode) ? d : null;
+}
+
 function renderCart() {
   const cart = getCart();
   const box = $("#cart-lines");
@@ -343,10 +353,8 @@ function renderCart() {
     (same ?? rows[Math.min(focusAt.index, rows.length - 1)]?.querySelector("button"))?.focus();
   }
 
-  const ship = isShipping() ? config.shippingCents : 0;
   $("#t-sub").textContent = money(subtotal());
-  $("#t-ship-row").hidden = !(isShipping() && ship > 0);
-  $("#t-ship").textContent = money(ship);
+  $("#t-ship-row").hidden = !isShipping();
   requestQuote();
 }
 
@@ -367,6 +375,8 @@ form.addEventListener("change", (e) => {
     renderCart();
   }
   if (e.target.name === "shipSame") syncAddressSections();
+  // Shipping is priced from the destination, so a new ZIP, state or street means a new quote.
+  if (isShipping() && /^(bill|ship)(Zip|State|Line1|Line2)$|^shipSame$/.test(e.target.name)) requestQuote();
   // Carry the billing ZIP into Square's card form, which asks for one itself.
   if (e.target.name === "billZip" && card && /^\d{5}$/.test(e.target.value.trim())) {
     try {
@@ -380,16 +390,23 @@ document.addEventListener("cart-changed", renderCart);
 
 // ---- tax and total, looked up from Square before paying ----------------------------------
 let quote = null; // { key, subtotal, shipping, tax, total } for the current cart, or null
+let quoteError = ""; // why the API refused the last quote (e.g. a piece that can't be shipped), shown again on Pay
 let quoting = false;
 let quoteSeq = 0;
 let quoteTimer = null;
 let cardReady = false;
-const quoteKey = () => cartQuoteKey(getCart(), form.fulfillment.value);
+const quoteKey = () => cartQuoteKey(getCart(), form.fulfillment.value, shipDestination());
+// A shipped order can only be paid once its shipping is priced, which needs the address.
+const quoteComplete = () => quote !== null && quote.total !== null;
 
 function updatePayButton() {
   payBtn.disabled = !cardReady || quoting;
-  const fallback = subtotal() + (isShipping() ? config.shippingCents : 0);
-  payBtn.textContent = quoting ? "Looking up tax…" : quote ? `Pay ${money(quote.total)}` : `Pay ${money(fallback)} + tax`;
+  const extra = isShipping() ? " + shipping + tax" : " + tax";
+  payBtn.textContent = quoting
+    ? "Looking up the total…"
+    : quoteComplete()
+      ? `Pay ${money(quote.total)}`
+      : `Pay ${money(subtotal())}${extra}`;
 }
 
 function showQuote(state, q) {
@@ -398,18 +415,29 @@ function showQuote(state, q) {
     note = $("#quote-status");
   for (const el of [tax, total]) el.setAttribute("aria-busy", String(state === "loading"));
   if (state === "loading") {
+    if (isShipping()) $("#t-ship").textContent = "…";
     tax.textContent = "…";
     total.textContent = "…";
-    note.textContent = "Looking up sales tax…";
+    note.textContent = isShipping() ? "Looking up shipping and sales tax…" : "Looking up sales tax…";
+  } else if (state === "ok" && q.total === null) {
+    // Shipping, but no address to price it yet.
+    $("#t-ship").textContent = "Enter address";
+    tax.textContent = money(q.tax);
+    total.textContent = "–";
+    note.textContent = "Shipping is priced from your ZIP code once you enter your address.";
   } else if (state === "ok") {
     tax.textContent = money(q.tax);
     total.textContent = money(q.total);
-    if (q.shipping) $("#t-ship").textContent = money(q.shipping);
-    note.textContent = `Sales tax ${money(q.tax)}. Total ${money(q.total)}.`;
+    if (q.shipping !== null) $("#t-ship").textContent = money(q.shipping);
+    const by = q.carrier ? ` by ${q.carrier}` : "";
+    note.textContent = isShipping()
+      ? `Shipping ${money(q.shipping)}${by}. Sales tax ${money(q.tax)}. Total ${money(q.total)}.`
+      : `Sales tax ${money(q.tax)}. Total ${money(q.total)}.`;
   } else {
+    if (isShipping()) $("#t-ship").textContent = "–";
     tax.textContent = "–";
     total.textContent = "–";
-    note.textContent = "Couldn't look up sales tax right now. It will be added when you pay.";
+    note.textContent = q?.message ?? "Couldn't look up the total right now. Please try again in a moment.";
   }
   updatePayButton();
 }
@@ -419,6 +447,7 @@ function requestQuote() {
   const key = quoteKey();
   if (quote?.key === key) return showQuote("ok", quote);
   quote = null;
+  quoteError = "";
   quoting = true;
   showQuote("loading");
   clearTimeout(quoteTimer);
@@ -429,12 +458,20 @@ function requestQuote() {
       const res = await postJson("/api/quote", {
         lines: getCart().map((l) => ({ variationId: l.variationId, quantity: l.quantity })),
         fulfillment: form.fulfillment.value,
+        destination: shipDestination() ?? undefined,
       });
       const out = await res.json();
       if (seq !== quoteSeq) return; // a newer cart change is already being looked up
       if (res.status === 409 && out.sold) {
         quoting = false;
         markSold(out.sold, out.errors[0]);
+        return;
+      }
+      if (res.status === 400 && out.errors?.[0]) {
+        // e.g. a piece that can't be shipped yet, or a ZIP we can't ship to: say so as it is.
+        quoting = false;
+        quoteError = out.errors[0];
+        showQuote("error", { message: quoteError });
         return;
       }
       if (!res.ok) throw new Error(out.errors?.[0]);
@@ -552,10 +589,19 @@ async function postCheckout(body) {
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!card || quoting || !validate()) return;
+  if (isShipping() && !quoteComplete()) {
+    // Never take payment for a shipped order before the customer has seen what shipping costs.
+    if (quoteError) say(quoteError, "err");
+    else {
+      say("Shipping is being priced for your address. Check the total, then press Pay again.", "err");
+      requestQuote();
+    }
+    return;
+  }
   const f = new FormData(form);
   const billing = address(f, "bill");
   const [givenName, ...rest] = String(f.get("name")).trim().split(/\s+/);
-  const amount = quote?.total ?? subtotal() + (isShipping() ? config.shippingCents : 0);
+  const amount = quote?.total ?? subtotal();
   payBtn.disabled = true;
   say("Processing…", "ok");
   try {

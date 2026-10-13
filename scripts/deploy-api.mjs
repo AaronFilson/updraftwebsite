@@ -197,7 +197,6 @@ const apiParams = () => ({
   SquareTokenParam: stage.squareTokenParam,
   SquareLocationId: stage.squareLocationId,
   SquareEnv: stage.squareEnv,
-  ShippingCents: String(stage.shippingCents),
   SiteOrigin: stage.siteUrl,
   NewsletterGroupId: stage.newsletterGroupId,
   ApiConcurrency: String(stage.apiConcurrency),

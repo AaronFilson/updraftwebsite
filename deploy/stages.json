@@ -10,7 +10,6 @@
     "squareAppId": "sandbox-sq0idb-1vOeswd-22qg74POomdy9Q",
     "squareLocationId": "LVD23T0RKJF05",
     "squareTokenParam": "/updraft/prod/square-access-token",
-    "shippingCents": 0,
     "newsletterGroupId": "353ac9bc-bb36-4b03-8963-0f6ca6728a07",
     "apiConcurrency": 5,
     "alertEmail": "aaronfilson@gmail.com"
@@ -26,7 +25,6 @@
     "squareAppId": "sandbox-sq0idb-1vOeswd-22qg74POomdy9Q",
     "squareLocationId": "LVD23T0RKJF05",
     "squareTokenParam": "/updraft/staging/square-access-token",
-    "shippingCents": 0,
     "newsletterGroupId": "",
     "apiConcurrency": 2,
     "alertEmail": ""
