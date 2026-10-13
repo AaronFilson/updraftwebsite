@@ -35,8 +35,8 @@ for (const width of widths) {
 }
 
 // The home headline and subtitle each break only at their <br> (after "hand," and before "from").
-// Widest real-device fonts, as width / font-size: "Pottery shaped by hand," 12.2 (Georgia) and
-// "Functional and sculptural ceramics" 15.5 (Roboto, Android). The CSS caps the sizes to fit those.
+// Widest fonts they can be set in, as width / font-size: "Pottery shaped by hand," 12.2 (Georgia, while
+// Lora loads) and "Functional and sculptural ceramics" 16.3 (Lora). The CSS caps the sizes to fit those.
 for (const width of [320, 360, 390, 412, 700, 768]) {
   test.describe(`home headline at ${width}px`, () => {
     test.use({ viewport: { width, height: 900 } });
@@ -71,7 +71,7 @@ for (const width of [320, 360, 390, 412, 700, 768]) {
       });
       // The sizing rule, independent of which fonts this machine has.
       expect(m.h1.size * 12.2).toBeLessThanOrEqual(m.h1.width);
-      expect(m.p.size * 15.5).toBeLessThanOrEqual(m.p.width);
+      expect(m.p.size * 16.3).toBeLessThanOrEqual(m.p.width);
       // The real rendering, where one of the serifs we ask for is installed (skipped where only a wide default like DejaVu is).
       if (m.realSerif) expect([m.h1.lines, m.p.lines]).toEqual([2, 2]);
     });
