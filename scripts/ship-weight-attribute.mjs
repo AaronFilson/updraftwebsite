@@ -1,41 +1,20 @@
 // Creates the "Ship weight (lb)" custom attribute on Square items, once per Square account. Shipping
-// is priced from it (backend/src/shipping.mjs); fill it in for each item in Square Dashboard.
-// The token is taken from SQUARE_ACCESS_TOKEN or backend/.env and never printed.
+// is priced from it (backend/src/shipping.mjs); fill it in for each item in Square Dashboard, or load
+// items with scripts/load-items.mjs, which runs this first.
 //   node scripts/ship-weight-attribute.mjs                     production
 //   node scripts/ship-weight-attribute.mjs --stage staging     staging
-import { existsSync, readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
-import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { currentStage } from "./stage.mjs";
+import { squareClient, squareErrorMessage } from "./square-client.mjs";
 
-const ROOT = path.resolve(import.meta.dirname, "..");
-// The Square SDK is a backend dependency.
-const sdk = createRequire(path.join(ROOT, "backend", "package.json")).resolve("square");
-const { SquareClient, SquareEnvironment } = await import(pathToFileURL(sdk).href);
-const stage = currentStage();
+export const SHIP_LB_KEY = "ship_lb"; // must match SHIP_LB_KEY in backend/src/catalog.mjs
 
-let token = process.env.SQUARE_ACCESS_TOKEN;
-const envFile = path.join(ROOT, "backend", ".env");
-if (!token && existsSync(envFile))
-  token = readFileSync(envFile, "utf8")
-    .match(/^\s*SQUARE_ACCESS_TOKEN\s*=\s*['"]?([^'"\r\n]+)/m)?.[1]
-    ?.trim();
-if (!token) throw new Error("No token: set SQUARE_ACCESS_TOKEN or put it in backend/.env (git-ignored).");
-
-const square = new SquareClient({
-  token,
-  environment: stage.squareEnv === "production" ? SquareEnvironment.Production : SquareEnvironment.Sandbox,
-});
-
-const KEY = "ship_lb"; // must match SHIP_LB_KEY in backend/src/catalog.mjs
-const existing = [];
-for await (const o of await square.catalog.list({ types: "CUSTOM_ATTRIBUTE_DEFINITION" }))
-  if (o.customAttributeDefinitionData?.key === KEY) existing.push(o);
-if (existing.length) {
-  console.log(`"Ship weight (lb)" already exists in Square ${stage.squareEnv} (${existing[0].id}).`);
-} else {
+/** The definition's id, created if this Square account doesn't have it yet. */
+export async function ensureShipWeightAttribute(square, { dryRun = false } = {}) {
+  for await (const o of await square.catalog.list({ types: "CUSTOM_ATTRIBUTE_DEFINITION" }))
+    if (!o.isDeleted && o.customAttributeDefinitionData?.key === SHIP_LB_KEY) return { id: o.id, created: false };
+  if (dryRun) return { id: null, created: true };
   const { catalogObject } = await square.catalog.object.upsert({
     idempotencyKey: randomUUID(),
     object: {
@@ -45,7 +24,7 @@ if (existing.length) {
         type: "NUMBER",
         name: "Ship weight (lb)",
         description: "Billed weight of the packed box, from the pack-and-ship planner. Shipping is priced from it; empty = pickup only.",
-        key: KEY,
+        key: SHIP_LB_KEY,
         allowedObjectTypes: ["ITEM"],
         sellerVisibility: "SELLER_VISIBILITY_READ_WRITE_VALUES",
         appVisibility: "APP_VISIBILITY_READ_WRITE_VALUES",
@@ -53,5 +32,16 @@ if (existing.length) {
       },
     },
   });
-  console.log(`Created "Ship weight (lb)" in Square ${stage.squareEnv} (${catalogObject.id}).`);
+  return { id: catalogObject.id, created: true };
+}
+
+if (import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const stage = currentStage();
+  try {
+    const { id, created } = await ensureShipWeightAttribute(await squareClient(stage));
+    console.log(`${created ? "Created" : "Already there:"} "Ship weight (lb)" in Square ${stage.squareEnv} (${id}).`);
+  } catch (err) {
+    console.error(squareErrorMessage(err));
+    process.exitCode = 1;
+  }
 }

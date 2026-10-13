@@ -1,0 +1,103 @@
+{
+  "note": "Photo shoot of 2026-10-13. Sizes are photo estimates (about ±½ in); weights from the scale; shipLb is the billed weight of the packed box (3 in padding on A, B, H, L; 2 in on the rest). The bloated second bowl (IMG_4363) is not listed.",
+  "photoDir": "C:/Users/bellows/Documents/inventory",
+  "glaze": "Tacoma crackle 26",
+  "items": [
+    {
+      "name": "Large lantern bowl",
+      "size": "11″ × 4¾″",
+      "price": 100,
+      "category": "Bowls",
+      "shipLb": 34,
+      "photos": ["IMG_4302.JPG", "IMG_4303.JPG", "IMG_4304.JPG", "IMG_4305.JPG"]
+    },
+    {
+      "name": "Deep lantern bowl",
+      "size": "9″ × 6″",
+      "price": 75,
+      "category": "Bowls",
+      "shipLb": 30,
+      "photos": ["IMG_4308.JPG", "IMG_4309.JPG"]
+    },
+    {
+      "name": "Lantern bowl",
+      "size": "9½″ × 3¾″",
+      "price": 70,
+      "category": "Bowls",
+      "shipLb": 19,
+      "photos": ["IMG_4312.JPG", "IMG_4313.JPG", "IMG_4314.JPG"]
+    },
+    {
+      "name": "Scalloped lantern dish",
+      "size": "9½″ × 2″",
+      "price": 55,
+      "category": "Plates & dishes",
+      "shipLb": 15,
+      "photos": ["IMG_4318.JPG", "IMG_4319.JPG"]
+    },
+    {
+      "name": "Shallow two-tone lantern bowl",
+      "size": "9¾″ × 2¼″",
+      "price": 55,
+      "category": "Bowls",
+      "shipLb": 15,
+      "photos": ["IMG_4322.JPG", "IMG_4323.JPG"]
+    },
+    {
+      "name": "Small lantern bowl",
+      "size": "7″ × 4¼″",
+      "price": 40,
+      "category": "Bowls",
+      "shipLb": 13,
+      "photos": ["IMG_4326.JPG", "IMG_4327.JPG"]
+    },
+    {
+      "name": "\"T O P\" coasters, set of 3",
+      "size": "5½″ across, set of 3",
+      "price": 45,
+      "category": "Sets",
+      "shipLb": 8,
+      "photos": ["IMG_4330.JPG"]
+    },
+    {
+      "name": "Nested lantern bowls, set of 3",
+      "size": "7¼″, 7¾″ and 8″ × 4½″, set of 3",
+      "price": 120,
+      "category": "Sets",
+      "shipLb": 28,
+      "photos": ["IMG_4333.JPG", "IMG_4334.JPG"]
+    },
+    {
+      "name": "Lantern plate",
+      "size": "10¼″ × 1¼″",
+      "price": 45,
+      "category": "Plates & dishes",
+      "shipLb": 13,
+      "photos": ["IMG_4337.JPG", "IMG_4338.JPG"]
+    },
+    {
+      "name": "Tapered lantern vase",
+      "size": "10″ × 5¾″",
+      "price": 75,
+      "category": "Vases",
+      "shipLb": 17,
+      "photos": ["IMG_4340.JPG", "IMG_4341.JPG"]
+    },
+    {
+      "name": "Slim lantern vase",
+      "size": "9½″ × 4¾″",
+      "price": 65,
+      "category": "Vases",
+      "shipLb": 14,
+      "photos": ["IMG_4344.JPG", "IMG_4345.JPG"]
+    },
+    {
+      "name": "Tall flared lantern vase",
+      "size": "11¾″ × 6½″",
+      "price": 150,
+      "category": "Vases",
+      "shipLb": 33,
+      "photos": ["IMG_4348.JPG", "IMG_4349.JPG"]
+    }
+  ]
+}

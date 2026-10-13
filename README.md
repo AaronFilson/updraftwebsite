@@ -67,7 +67,7 @@ Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and eac
    base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
    ```
    Check the hosts against Square's current Web Payments SDK CSP docs, and roll it out as `Content-Security-Policy-Report-Only` first, then switch once a sandbox checkout works with no violations.
-4. **Go live**: in `deploy/stages.json`, set prod's `squareEnv` to `"production"` with the production application and location IDs. Run `npm run put-token` with the production token, then `npm run deploy:api` and `npm run publish`. Test the whole flow on staging first, with Square's test card `4111 1111 1111 1111`.
+4. **Go live**: test the whole flow on staging first, with Square's test card `4111 1111 1111 1111`. In `deploy/stages.json`, set prod's `squareEnv` to `"production"` with the production application ID, location ID and newsletter group ID. Load the pieces into the production catalog with `node scripts/load-items.mjs <batch.json> --go` (it also creates the "Ship weight (lb)" attribute). Then, together, store the token with `npm run put-token` and run `npm run deploy:api` and `npm run publish`: the live functions read the new token on their next start, so storing it before the deploy breaks the shop until the deploy finishes. For a production stage, the scripts only take the token from `SQUARE_ACCESS_TOKEN`, never from `backend/.env`.
 
 ## Local preview and checks
 
