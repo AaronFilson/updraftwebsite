@@ -1,6 +1,6 @@
 // Loads a batch of pieces into a stage's Square catalog: categories, the "Ship weight (lb)" attribute,
 // then each item with its price, description ("<glaze> · <size>" then "Lantern motif."), category, ship
-// weight, photos (resized to 2400 px wide) and a stock count of 1 at the stage's location.
+// weight, photos (cropped as the batch says, see scripts/listing-photo.mjs) and a stock count of 1 at the stage's location.
 // Without --go it only prints what it would do. Items whose name is already in the catalog are skipped,
 // so a run that stopped part way can be run again.
 //   node scripts/load-items.mjs scripts/items/2026-10-13.json --stage staging        dry run
@@ -10,10 +10,10 @@
 import { readFileSync, existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import sharp from "sharp";
 import { currentStage } from "./stage.mjs";
 import { squareClient, squareErrorMessage } from "./square-client.mjs";
 import { ensureShipWeightAttribute, SHIP_LB_KEY } from "./ship-weight-attribute.mjs";
+import { listingJpeg } from "./listing-photo.mjs";
 
 const args = process.argv.slice(2);
 const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -101,7 +101,7 @@ try {
     });
     // Photos in the order listed; the first is the main one.
     for (const [i, photo] of it.photos.entries()) {
-      const jpeg = await sharp(path.join(photoDir, photo)).rotate().resize({ width: 2400 }).jpeg({ quality: 85 }).toBuffer();
+      const jpeg = await listingJpeg(path.join(photoDir, photo), batch.crops?.[photo], batch.fill);
       await square.catalog.images.create({
         request: {
           idempotencyKey: randomUUID(),
