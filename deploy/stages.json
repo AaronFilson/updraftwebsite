@@ -12,6 +12,7 @@
     "squareTokenParam": "/updraft/prod/square-access-token",
     "newsletterGroupId": "7P07F7ZHJ3BJHT0PV01WJBSV24",
     "apiConcurrency": 5,
+    "imagesConcurrency": 5,
     "alertEmail": "aaronfilson@gmail.com"
   },
   "staging": {
@@ -27,6 +28,7 @@
     "squareTokenParam": "/updraft/staging/square-access-token",
     "newsletterGroupId": "",
     "apiConcurrency": 2,
+    "imagesConcurrency": 5,
     "alertEmail": ""
   }
 }

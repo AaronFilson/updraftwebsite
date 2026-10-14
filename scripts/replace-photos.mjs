@@ -71,3 +71,6 @@ try {
   console.error(squareErrorMessage(err));
   process.exitCode = 1;
 }
+// The first visitors would otherwise all wait on the resizer at once (see scripts/warm-photos.mjs).
+const warmCmd = `npm run warm-photos${stage.name === "prod" ? "" : ` -- --stage ${stage.name}`}`;
+if (GO && !process.exitCode) console.log(`In a minute, once the shop shows the new photos, run: ${warmCmd}`);
