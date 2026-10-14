@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { handler, _setSquare } from "../src/handler.mjs";
 import sharp from "sharp";
-import { parseRequest, handler as images, _resetCatalog } from "../src/images.mjs";
+import { parseRequest, handler as images, _resetCatalog, _catalogWaits } from "../src/images.mjs";
 
 const SQUARE_PHOTO = "https://items-images-sandbox.s3.us-west-2.amazonaws.com/files/abc/original.jpeg";
 
@@ -78,6 +78,35 @@ test("the photo function only resizes photos in the shop's own catalog, and surv
 
   const broken = await get(NOT_AN_IMAGE);
   assert.equal(broken.statusCode, 422, "bytes sharp can't read are a 422, not a crash");
+});
+
+test("the photo function waits out a busy API instead of failing the photo, but not forever", async (t) => {
+  process.env.ALLOWED_ORIGIN = "https://shop.example";
+  _catalogWaits.base = 1;
+  t.after(() => (_catalogWaits.base = 300));
+  const photo = await sharp({ create: { width: 10, height: 10, channels: 3, background: "#6a9" } })
+    .jpeg()
+    .toBuffer();
+  let busy;
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (url !== "https://shop.example/api/catalog") return new Response(photo);
+    reads++;
+    return busy-- > 0 ? new Response("", { status: 429 }) : Response.json({ items: [{ image: SQUARE_PHOTO }] });
+  });
+  const get = () =>
+    images({ requestContext: { http: { method: "GET" } }, queryStringParameters: { u: SQUARE_PHOTO, w: "400", f: "webp" } });
+
+  _resetCatalog();
+  busy = 2; // throttled twice (the API's concurrency cap), then answers
+  assert.equal((await get()).statusCode, 200);
+  assert.equal(reads, 3);
+
+  _resetCatalog();
+  reads = 0;
+  busy = 99; // still busy after every try: the page falls back to Square's original
+  assert.equal((await get()).statusCode, 503);
+  assert.equal(reads, 4);
 });
 
 const iter = (arr) => ({

@@ -298,6 +298,12 @@ Resources:
         CustomErrorResponses:
           - { ErrorCode: 403, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }
           - { ErrorCode: 404, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }
+          # Failing answers aren't kept (CloudFront would otherwise for 10 s), so a retry after a passing
+          # error reaches the function again. A throttled one (429) is never cached in the first place.
+          - { ErrorCode: 500, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 502, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 503, ErrorCachingMinTTL: 0 }
+          - { ErrorCode: 504, ErrorCachingMinTTL: 0 }
 
   # Staging only; production's records are managed by scripts/dns-cutover.mjs.
   AliasA:

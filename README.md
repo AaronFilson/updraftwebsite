@@ -46,7 +46,19 @@ Products come straight from your Square catalog. Add items in Square Dashboard >
 
 The "First look at new work" form posts to `/api/subscribe`, which adds the address to your Square customer directory (existing customers are matched by email, not duplicated). To keep website signups separate, they also go into a "Website newsletter" customer group: run `node scripts/newsletter-group.mjs` (`--stage staging` for staging), which finds or creates the group and prints its id, put that id in the stage's `newsletterGroupId` in `deploy/stages.json`, and run `npm run deploy:api`. An id from the wrong Square account (sandbox vs production) makes every signup fail. Send emails to that group with Square Marketing. Check Square's email-marketing consent rules before your first campaign.
 
-Abuse limits: the API is capped at 5 concurrent runs (`ApiConcurrency`), and each running instance allows 5 signup attempts per IP per 10 minutes and ignores repeat signups of the same address within an hour. New AWS accounts with a low Lambda concurrency quota can't reserve concurrency; deploy with `ApiConcurrency=0` there.
+Abuse limits: each running API instance allows 5 signup attempts per IP per 10 minutes and ignores repeat signups of the same address within an hour.
+
+### Concurrency limits per environment
+
+Each Lambda function can only run so many copies at once (reserved concurrency). Past the limit, Lambda answers 429 instead of running. The limits are set per stage in `deploy/stages.json` and applied by `npm run deploy:api`:
+
+| Function | Setting | prod | staging | When it's reached |
+| --- | --- | --- | --- | --- |
+| Api (catalog, quote, signup, share pages) | `apiConcurrency` | 5 | 2 | Busy pages get a 429; the photo resizer retries its catalog check. |
+| Checkout | fixed in `backend/template.yaml` | 1 | 1 | On purpose: one order at a time, so a one-of-a-kind piece can't sell twice. Buyers queue and retry. |
+| Images (photo resizer) | `imagesConcurrency` | 5 | 5 | The first visit after new photos asks for more resizes at once; the page retries each photo twice, then shows Square's full-size original. `npm run warm-photos` makes every copy ahead of time. |
+
+The account needs 10 unreserved on top of all of these (both stages together: 19 reserved now). A new AWS account with a low Lambda concurrency quota can't reserve any; deploy with `apiConcurrency: 0` there, which turns off every reservation.
 
 ## Setup
 

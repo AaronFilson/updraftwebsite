@@ -43,10 +43,20 @@ export function parseRequest(q = {}, env = process.env.SQUARE_ENV) {
 
 // The shop's photos, from its own catalog (through CloudFront, like a visitor). Re-read when a photo
 // isn't in it, at most every 20 seconds, so a piece added in Square shows its photo within a minute.
+// The API has its own concurrency cap (apiConcurrency in deploy/stages.json), and a shop page's first
+// visit starts several of these functions at once, each reading the catalog; a busy answer (429) or a
+// passing 5xx is retried a few times with a short, jittered wait instead of failing the photo.
 let known = { at: 0, urls: new Set() };
 let reading;
+const CATALOG_TRIES = 4;
+export const _catalogWaits = { base: 300 }; // ms; for tests
 async function readCatalog() {
-  const res = await fetch(`${process.env.ALLOWED_ORIGIN}/api/catalog`, { signal: AbortSignal.timeout(8_000), redirect: "error" });
+  let res;
+  for (let attempt = 1; ; attempt++) {
+    res = await fetch(`${process.env.ALLOWED_ORIGIN}/api/catalog`, { signal: AbortSignal.timeout(8_000), redirect: "error" });
+    if (res.ok || attempt === CATALOG_TRIES || !(res.status === 429 || res.status >= 500)) break;
+    await new Promise((r) => setTimeout(r, _catalogWaits.base * 2 ** (attempt - 1) * (0.5 + Math.random())));
+  }
   if (!res.ok) throw new Error(`catalog answered ${res.status}`);
   const { items = [] } = await res.json();
   known = { at: Date.now(), urls: new Set(items.flatMap((i) => [i.image, ...(i.images ?? [])]).filter(Boolean)) };

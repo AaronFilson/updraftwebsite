@@ -9,7 +9,8 @@ Parameters:
   SquareLocationId: { Type: String }
   SquareEnv: { Type: String, Default: sandbox, AllowedValues: [sandbox, production] }
   SiteOrigin: { Type: String, Description: "e.g. https://updraftpotterystudio.com (used for CORS)" }
-  ApiConcurrency: { Type: Number, Default: 5, Description: "Max concurrent API invocations (abuse cap). 0 = no reservation (needed on new accounts with low Lambda limits)" }
+  ApiConcurrency: { Type: Number, Default: 5, Description: "Max concurrent API invocations (abuse cap). 0 = no reservation for any function (needed on new accounts with low Lambda limits)" }
+  ImagesConcurrency: { Type: Number, Default: 5, Description: "Max concurrent photo resizes (Images function). Ignored when ApiConcurrency is 0" }
   NewsletterGroupId: { Type: String, Default: "", Description: "Optional Square customer group id that website signups are added to" }
   SsmReadPolicyArn:
     Type: String
@@ -88,9 +89,9 @@ Resources:
     Properties:
       CodeUri: .build-images # the images bundle and sharp's Linux binaries, never the backend folder
       MemorySize: 1024 # encoding is CPU-bound, and Lambda gives CPU in proportion to memory
-      # Only the catalog's photos are taken, so the work is bounded anyway; 5 at once lets a shop page's
-      # first visit after new pieces get resized copies instead of falling back to the originals.
-      ReservedConcurrentExecutions: !If [CapConcurrency, 5, !Ref AWS::NoValue]
+      # Only the catalog's photos are taken, so the work is bounded anyway. Past this many at once Lambda
+      # answers 429; the page retries, and loading photos pre-makes the copies (scripts/warm-photos.mjs).
+      ReservedConcurrentExecutions: !If [CapConcurrency, !Ref ImagesConcurrency, !Ref AWS::NoValue]
       LoggingConfig: { LogGroup: !Ref ImagesLogs }
       FunctionUrlConfig:
         AuthType: AWS_IAM # see Api

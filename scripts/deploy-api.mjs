@@ -200,6 +200,7 @@ const apiParams = () => ({
   SiteOrigin: stage.siteUrl,
   NewsletterGroupId: stage.newsletterGroupId,
   ApiConcurrency: String(stage.apiConcurrency),
+  ImagesConcurrency: String(stage.imagesConcurrency),
   AlertEmail: stage.alertEmail,
 });
 const deployApi = () => {

@@ -1,17 +1,32 @@
 // Shop pieces in detail: the detail view (photos, spec line, add to cart, share, links and Back),
 // resized photos with their fallback, type filters, and the product data for search engines.
 import { test, expect } from "@playwright/test";
+import sharp from "sharp";
 import { mockApi, item } from "./mock-api.mjs";
 import { fakeSquare } from "./fake-square.mjs";
 
 const PHOTO = (n) => `https://items-images-sandbox.s3.us-west-2.amazonaws.com/files/p${n}/original.jpeg`;
 // 1x1 PNG, served for every photo request in these tests
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-const servePhotos = (page, { failResized = false } = {}) =>
+// A real 16×16 photo in each format /api/img serves, so the browser decodes what it asked for.
+const SIZED = Object.fromEntries(
+  await Promise.all(
+    ["avif", "webp", "jpeg"].map(async (f) => [
+      f,
+      await sharp({ create: { width: 16, height: 16, channels: 3, background: "#6a9" } })
+        .toFormat(f)
+        .toBuffer(),
+    ]),
+  ),
+);
+// failResized: how many /api/img requests fail (429, as when the resizer is at its limit) before they work.
+const servePhotos = (page, { failResized = 0 } = {}) =>
   Promise.all([
-    page.route("**/api/img**", (r) =>
-      failResized ? r.fulfill({ status: 502, body: "" }) : r.fulfill({ body: PNG, contentType: "image/png" }),
-    ),
+    page.route("**/api/img**", (r) => {
+      if (failResized-- > 0) return r.fulfill({ status: 429, body: "" });
+      const f = new URL(r.request().url()).searchParams.get("f") ?? "webp";
+      return r.fulfill({ body: SIZED[f], contentType: `image/${f}` });
+    }),
     page.route("https://items-images-sandbox.s3.us-west-2.amazonaws.com/**", (r) => r.fulfill({ body: PNG, contentType: "image/png" })),
   ]);
 const bowl = item("bowl", "Celadon bowl", 6500, 1, {
@@ -35,12 +50,29 @@ test("cards show the spec line and resized photos", async ({ page }) => {
   await expect(card.locator("source")).toHaveAttribute("type", "image/avif");
 });
 
-test("if a resized photo can't load, the card falls back to Square's original", async ({ page }) => {
+test("a resized photo that's busy at first is asked for again, and loads", async ({ page }) => {
   await page.unroute("**/api/img**");
-  await servePhotos(page, { failResized: true });
+  await servePhotos(page, { failResized: 1 });
+  const originals = [];
+  page.on("request", (r) => r.url() === PHOTO(1) && originals.push(r.url()));
   await mockApi(page, { items: [bowl] });
   await page.goto("/shop.html");
-  await expect(page.locator("#p-item-bowl img")).toHaveAttribute("src", PHOTO(1));
+  const img = page.locator("#p-item-bowl img");
+  // Browsers differ in how they ask again (ours after a wait, WebKit also at another size), but the
+  // card ends up with a resized copy, never Square's full-size original.
+  await expect
+    .poll(() => img.evaluate((i) => i.complete && i.naturalWidth > 0 && i.currentSrc.includes("/api/img?")), { timeout: 10_000 })
+    .toBe(true);
+  await page.waitForTimeout(500);
+  expect(originals).toEqual([]);
+});
+
+test("if a resized photo still can't load after retrying, the card falls back to Square's original", async ({ page }) => {
+  await page.unroute("**/api/img**");
+  await servePhotos(page, { failResized: Infinity });
+  await mockApi(page, { items: [bowl] });
+  await page.goto("/shop.html");
+  await expect(page.locator("#p-item-bowl img")).toHaveAttribute("src", PHOTO(1), { timeout: 15_000 });
 });
 
 test("the detail view: photos, full description, add to cart, then Escape returns to the card", async ({ page }) => {
