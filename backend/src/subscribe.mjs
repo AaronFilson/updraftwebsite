@@ -1,5 +1,5 @@
 // POST /api/subscribe: adds an email to the Square customer directory (and newsletter group, if set).
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { NEWSLETTER_GROUP_ID, square } from "./config.mjs";
 import { respond, EMAIL_RE } from "./http.mjs";
 
@@ -45,7 +45,9 @@ export async function subscribe(b, ip = "unknown") {
   let id = customers[0]?.id;
   if (!id) {
     const { customer } = await square().customers.create({
-      idempotencyKey: `s-${createHash("sha256").update(email).digest("hex").slice(0, 40)}`,
+      // A fresh key each time: Square keeps keys forever, so one made from the email would block anyone
+      // who signs up again after being deleted from the directory. The search above prevents duplicates.
+      idempotencyKey: randomUUID(),
       emailAddress: email,
       note: "Signed up for email updates on the website",
     });
