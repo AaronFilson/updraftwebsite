@@ -62,7 +62,7 @@ sync(
   "--cache-control",
   YEAR,
 );
-// 2. Everything else: HTML, favicon, manifest, robots, sitemap.
+// 2. Everything else: HTML (the piece shell too), favicon, manifest, robots, sitemaps.
 sync(
   "pages",
   "--exclude",
@@ -78,24 +78,11 @@ sync(
   "--cache-control",
   SHORT,
 );
-sync(
-  "root scripts",
-  "--exclude",
-  "*",
-  "--include",
-  "*.js",
-  "--exclude",
-  "assets/*",
-  "--content-type",
-  "text/javascript",
-  "--cache-control",
-  SHORT,
-); // p.js
 sync("manifest", "--exclude", "*", "--include", "*.webmanifest", "--content-type", "application/manifest+json", "--cache-control", SHORT);
 // 3. Remove anything that is no longer part of the build.
 const removed = sync("remove old files", "--delete", "--size-only");
 
-// 4. Clear CloudFront's copies of what isn't content-hashed (pages, p.js, manifest, robots, sitemap)
+// 4. Clear CloudFront's copies of what isn't content-hashed (pages, manifest, robots, sitemaps)
 //    and of anything just removed. Not "/*": that would also drop every resized shop photo under
 //    /api/img, and the next visitors would wait for all of them to be made again.
 if (!DRY) {

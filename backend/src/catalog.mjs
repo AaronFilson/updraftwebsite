@@ -54,6 +54,7 @@ export async function loadCatalog() {
       image: images.get(o.itemData.imageIds?.[0]) ?? null,
       images: (o.itemData.imageIds ?? []).map((id) => images.get(id)).filter(Boolean), // in the order set in Square
       category: categoryOf(o.itemData),
+      updatedAt: o.updatedAt ?? null, // the pieces' sitemap (piece-page.mjs)
       variations: (o.itemData.variations ?? [])
         .filter((v) => v.itemVariationData?.priceMoney)
         .map((v) => {

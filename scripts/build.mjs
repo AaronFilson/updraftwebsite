@@ -5,7 +5,8 @@
 //  - gallery markup rendered into pages from site/data/*.json (no runtime fetch)
 //  - shared header/footer partials and per-page head metadata (canonical, Open Graph, icons)
 //  - JS/CSS bundled, minified and content-hashed; HTML minified, comments stripped
-//  - icons, web manifest, robots.txt and (when SITE_URL is set) sitemap.xml
+//  - the shell the API puts each piece's page in (piece-shell.html; backend/src/piece-page.mjs)
+//  - icons, web manifest, robots.txt and (when SITE_URL is set) the sitemaps
 import { readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -226,7 +227,6 @@ async function icons() {
       .toBuffer();
   const [apple, i192, i512] = await Promise.all([180, 192, 512].map(async (s) => emit("img", `icon-${s}`, ".png", await png(s))));
   await writeFile(path.join(OUT, "favicon.svg"), svg);
-  await writeFile(path.join(OUT, "p.js"), await readFile(path.join(SRC, "p.js"))); // see backend/src/piece.mjs
   await writeFile(
     path.join(OUT, "site.webmanifest"),
     JSON.stringify({
@@ -291,6 +291,7 @@ function nav(current) {
   return `${menus.join("")}<a class="cart-link" href="/shop.html#cart">Cart <span class="badge" data-cart-count data-n="0">0</span><span class="vh"> items</span></a>`;
 }
 
+const SHELL = "piece-shell.html";
 const pageUrl = (name) => SITE_URL + (name === "index.html" ? "/" : `/${name}`);
 
 // Head tags shared by every page; title and description are read from the page itself.
@@ -305,7 +306,8 @@ function headMeta(name, html, { og, apple }) {
     `<meta name="theme-color" content="${BG.dark}" media="(prefers-color-scheme: dark)">`,
   ];
   if (!INDEXABLE) tags.push(`<meta name="robots" content="noindex">`);
-  if (INDEXABLE && !/<meta name="robots" content="noindex"/.test(html)) {
+  // The piece shell gets its address and preview from the API, per piece (backend/src/piece-page.mjs).
+  if (INDEXABLE && name !== SHELL && !/<meta name="robots" content="noindex"/.test(html)) {
     tags.push(
       `<link rel="canonical" href="${pageUrl(name)}">`,
       `<meta property="og:site_name" content="${SITE_NAME}">`,
@@ -437,20 +439,34 @@ const sizes = {
   ...(email ? { "policies.html": await page("policies.html", common("/policies.html"), shared) } : {}),
   "shop.html": await page("shop.html", common("/shop.html", assets.shop), shared),
   "error.html": await page("error.html", common(""), shared),
+  [SHELL]: await page(SHELL, common(""), shared),
 };
 
-const indexable = Object.keys(sizes).filter((n) => n !== "error.html");
+const indexable = Object.keys(sizes).filter((n) => n !== "error.html" && n !== SHELL);
 await writeFile(
   path.join(OUT, "robots.txt"),
-  INDEXABLE ? `User-agent: *\nAllow: /\n${SITE_URL ? `Sitemap: ${SITE_URL}/sitemap.xml\n` : ""}` : "User-agent: *\nDisallow: /\n",
+  INDEXABLE
+    ? `User-agent: *\nAllow: /\nDisallow: /${SHELL}\n${SITE_URL ? `Sitemap: ${SITE_URL}/sitemap.xml\n` : ""}`
+    : "User-agent: *\nDisallow: /\n",
 ); // staging stays out of search results
+// sitemap.xml names two: this build's pages, and every piece's page, which the API lists from Square
+// (/p/sitemap.xml, backend/src/piece.mjs), so a piece listed between publishes is found too.
 if (SITE_URL && INDEXABLE) {
   await writeFile(
-    path.join(OUT, "sitemap.xml"),
+    path.join(OUT, "sitemap-pages.xml"),
     `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 ${indexable.map((n) => `  <url><loc>${pageUrl(n)}</loc></url>`).join("\n")}
 </urlset>
+`,
+  );
+  await writeFile(
+    path.join(OUT, "sitemap.xml"),
+    `<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>${SITE_URL}/sitemap-pages.xml</loc></sitemap>
+  <sitemap><loc>${SITE_URL}/p/sitemap.xml</loc></sitemap>
+</sitemapindex>
 `,
   );
 }

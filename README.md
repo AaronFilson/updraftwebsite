@@ -23,7 +23,8 @@ The build:
 - makes 400 / 800px AVIF and 400 / 800 / 1600px WebP copies of each photo (cached in `.cache/`). The grid uses 400 or 800 depending on screen (AVIF where the browser supports it); 1600 loads only when a photo is opened.
 - puts a content hash in every image file name, so a replaced photo gets a new URL automatically.
 - renders the galleries into the pages from `site/data/*.json`, so pages need no data requests.
-- adds canonical, Open Graph and icon tags to every page, plus `robots.txt`, `site.webmanifest` and (with `SITE_URL` set) `sitemap.xml`.
+- adds canonical, Open Graph and icon tags to every page, plus `robots.txt`, `site.webmanifest` and (with `SITE_URL` set) `sitemap.xml`, which names the pages' sitemap and the pieces' (`/p/sitemap.xml`, from the API).
+- builds `piece-shell.html`, the page the API puts each piece in at `/p/<id>` (`backend/src/piece-page.mjs`); `npm run preview -- --pieces e2e/fixtures/catalog.json` draws them locally.
 - bundles, minifies and content-hashes the JS and CSS, and strips all comments from HTML/CSS/JS.
 - the Square payment SDK loads only once something is in the cart.
 
@@ -54,7 +55,7 @@ Each Lambda function can only run so many copies at once (reserved concurrency).
 
 | Function | Setting | prod | staging | When it's reached |
 | --- | --- | --- | --- | --- |
-| Api (catalog, quote, signup, share pages) | `apiConcurrency` | 5 | 2 | Busy pages get a 429; the photo resizer retries its catalog check. |
+| Api (catalog, quote, signup, piece pages) | `apiConcurrency` | 5 | 2 | Busy pages get a 429; the photo resizer retries its catalog check. |
 | Checkout | fixed in `backend/template.yaml` | 1 | 1 | On purpose: one order at a time, so a one-of-a-kind piece can't sell twice. Buyers queue and retry. |
 | Images (photo resizer) | `imagesConcurrency` | 5 | 5 | The first visit after new photos asks for more resizes at once; the page retries each photo twice, then shows Square's full-size original. `npm run warm-photos` makes every copy ahead of time. |
 

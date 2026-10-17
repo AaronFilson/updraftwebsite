@@ -10,7 +10,8 @@ import { currentStage } from "./stage.mjs";
 const stage = currentStage();
 const AT_ONCE = 2;
 
-// The sizes the site uses (site/js/shop.js cards, site/js/piece-view.js, backend/src/piece.mjs share image).
+// The sizes the site uses (site/js/shop.js cards, site/js/piece-view.js, and backend/src/piece-page.mjs:
+// the piece page's photos, and the 1200px JPEGs in its preview and product data).
 const MAIN = [
   [400, "avif"],
   [400, "webp"],
@@ -20,7 +21,7 @@ const MAIN = [
   [1600, "webp"],
   [1200, "jpeg"],
 ];
-const OTHER = MAIN.filter(([w, f]) => w !== 400 && f !== "jpeg");
+const OTHER = MAIN.filter(([w]) => w !== 400);
 
 const res = await fetch(`${stage.siteUrl}/api/catalog`);
 if (!res.ok) throw new Error(`${stage.siteUrl}/api/catalog answered ${res.status}`);

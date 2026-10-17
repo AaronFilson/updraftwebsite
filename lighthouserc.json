@@ -3,7 +3,12 @@
     "collect": {
       "startServerCommand": "node scripts/serve.mjs 4174 --catalog e2e/fixtures/catalog.json",
       "startServerReadyPattern": "Serving dist",
-      "url": ["http://localhost:4174/", "http://localhost:4174/shop.html", "http://localhost:4174/past-work.html"],
+      "url": [
+        "http://localhost:4174/",
+        "http://localhost:4174/shop.html",
+        "http://localhost:4174/past-work.html",
+        "http://localhost:4174/p/fixture-bowl"
+      ],
       "numberOfRuns": 3,
       "settings": {
         "chromeFlags": "--headless=new --no-sandbox"

@@ -71,7 +71,7 @@ async function renderProducts() {
     }
     box.replaceChildren(...items.map(productCard));
     renderFilters(items);
-    // Search engines read prices and availability from this (a data block, so the CSP doesn't apply).
+    // The list of pieces for search engines; each piece's own page has its price and availability.
     const data = Object.assign(document.createElement("script"), { type: "application/ld+json" });
     data.textContent = JSON.stringify(productData(items, location.origin));
     document.head.append(data);
@@ -166,9 +166,15 @@ function productCard(item) {
   card.className = "card";
   card.id = `p-${item.id}`;
   card.dataset.type = item.category ?? "";
-  const href = `#p-${item.id}`;
-  // The photo and the name both open the piece's detail view; only the name is a tab stop.
-  const media = Object.assign(document.createElement("a"), { className: "media", href, tabIndex: -1 });
+  // The photo and the name both open the piece's detail view; only the name is a tab stop. They link
+  // to the piece's own page (for search engines, new tabs and copied links); a plain click stays here.
+  const href = `/p/${item.id}`;
+  const openHere = (/** @type {MouseEvent} */ e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    location.hash = `p-${item.id}`;
+  };
+  const media = Object.assign(document.createElement("a"), { className: "media", href, tabIndex: -1, onclick: openHere });
   media.setAttribute("aria-hidden", "true");
   media.append(
     item.image
@@ -179,7 +185,7 @@ function productCard(item) {
   media.append(soldBadge);
   const body = Object.assign(document.createElement("div"), { className: "card-body" });
   const h = document.createElement("h3");
-  h.append(Object.assign(document.createElement("a"), { href, textContent: item.name }));
+  h.append(Object.assign(document.createElement("a"), { href, textContent: item.name, onclick: openHere }));
   const spec = Object.assign(document.createElement("p"), { className: "spec", textContent: specLine(item.description) });
   const { sel, row } = buyControls(item, (sold) => {
     card.classList.toggle("is-sold", sold);

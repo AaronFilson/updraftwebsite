@@ -5,6 +5,8 @@ import "./signup.js";
 
 // Home page only: a few pieces from the shop (a separate chunk, so other pages don't load it).
 if (document.getElementById("available")) import("./available.js");
+// A piece's own page (/p/ITEM): Add to cart.
+if (document.getElementById("piece-data")) import("./piece-page.js");
 
 // Lightbox: links point at the large image, so this works (as a plain link) without JS too.
 // The full-size JPEG is never fetched unless the visitor clicks "Full size".

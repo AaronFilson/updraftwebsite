@@ -12,6 +12,7 @@ const pages = [
   "/care.html",
   "/policies.html",
   "/shop.html",
+  "/p/fixture-bowl", // a piece's page, drawn from e2e/fixtures/pieces.json (scripts/serve.mjs --pieces)
   "/no-such-page",
 ];
 const widths = [390, 768, 1280];
