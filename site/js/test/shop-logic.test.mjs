@@ -96,13 +96,9 @@ test("spec line, the rest of the description, type filters and product data", as
   ]);
 
   const data = productData([piece("a", "Bowls"), piece("s", "Mugs", 0)], "https://example.com");
-  assert.equal(data.itemListElement.length, 2);
-  assert.deepEqual(data.itemListElement[0].item.offers, {
-    "@type": "Offer",
-    url: "https://example.com/p/a",
-    price: "40.00",
-    priceCurrency: "USD",
-    availability: "https://schema.org/InStock",
-  });
-  assert.equal(data.itemListElement[1].item.offers.availability, "https://schema.org/SoldOut");
+  // Each piece by its own page, which has its price and availability (backend/src/piece-page.mjs).
+  assert.deepEqual(data.itemListElement, [
+    { "@type": "ListItem", position: 1, url: "https://example.com/p/a", name: "a" },
+    { "@type": "ListItem", position: 2, url: "https://example.com/p/s", name: "s" },
+  ]);
 });

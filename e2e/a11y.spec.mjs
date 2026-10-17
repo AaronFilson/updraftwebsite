@@ -15,6 +15,7 @@ const pages = [
   "/care.html",
   "/policies.html",
   "/shop.html",
+  "/p/fixture-bowl", // a piece's page, drawn from e2e/fixtures/pieces.json (scripts/serve.mjs --pieces)
   "/no-such-page",
 ];
 const items = [item("bowl", "Celadon bowl", 6500, 1), item("mug", "Everyday mug", 3000, null), item("jar", "Tenmoku jar", 9000, 0)];

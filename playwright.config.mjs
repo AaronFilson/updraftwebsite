@@ -12,7 +12,11 @@ export default defineConfig({
   // In CI, "github" puts each failure on the pull request as an annotation (visible without signing in).
   reporter: process.env.CI ? [["github"], ["list"], ["html", { open: "never" }]] : "list",
   use: { baseURL: "http://localhost:4173", trace: "retain-on-failure" },
-  webServer: { command: "node scripts/serve.mjs 4173", url: "http://localhost:4173", reuseExistingServer: !process.env.CI },
+  webServer: {
+    command: "node scripts/serve.mjs 4173 --pieces e2e/fixtures/pieces.json",
+    url: "http://localhost:4173",
+    reuseExistingServer: !process.env.CI,
+  },
   projects: [
     // Locally this machine has Edge rather than Playwright's Chromium; CI installs Chromium.
     { name: "chromium", use: { ...devices["Desktop Chrome"], channel: process.env.CI ? undefined : "msedge" } },

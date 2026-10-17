@@ -1,6 +1,6 @@
 // Detail view for one piece: all of its photos (buttons, arrow keys or a swipe), the spec line and
-// full description, Add to cart, and a link to share. shop.js opens it for #p-ITEM links, so it works
-// from the home page, from a shared /p/ITEM link (which forwards here) and with the back button.
+// full description, Add to cart, and a link to share. shop.js opens it for #p-ITEM links (from the
+// home page, a click on a card, and the back button). A shared /p/ITEM link is the piece's own page.
 import { picture } from "./photos.js";
 import { specLine, descriptionRest } from "./shop-logic.js";
 

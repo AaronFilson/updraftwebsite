@@ -70,7 +70,8 @@ export function typeCounts(items) {
 export const showTypeFilters = (items) => items.length >= FILTER_MIN_PIECES && typeCounts(items).length >= 2;
 
 /**
- * schema.org Product data for the shop, so search engines can show price and availability.
+ * schema.org list of the shop's pieces, each by its own page (/p/ITEM), which carries the piece's
+ * Product data (backend/src/piece-page.mjs): Google looks for products on their own pages.
  * @param {any[]} items
  * @param {string} origin e.g. https://updraftpotterystudio.com
  */
@@ -78,29 +79,7 @@ export function productData(items, origin) {
   return {
     "@context": "https://schema.org",
     "@type": "ItemList",
-    itemListElement: items.map((i, n) => {
-      const open = i.variations.filter((v) => (v.stock ?? null) !== 0);
-      const v = open[0] ?? i.variations[0];
-      return {
-        "@type": "ListItem",
-        position: n + 1,
-        item: {
-          "@type": "Product",
-          name: i.name,
-          description: i.description || undefined,
-          image: i.images?.length ? i.images : i.image ? [i.image] : undefined,
-          category: i.category || undefined,
-          brand: { "@type": "Brand", name: "Updraft Pottery Studio" },
-          offers: {
-            "@type": "Offer",
-            url: `${origin}/p/${i.id}`,
-            price: (Math.min(...(open.length ? open : i.variations).map((x) => x.price)) / 100).toFixed(2),
-            priceCurrency: v.currency ?? "USD",
-            availability: open.length ? "https://schema.org/InStock" : "https://schema.org/SoldOut",
-          },
-        },
-      };
-    }),
+    itemListElement: items.map((i, n) => ({ "@type": "ListItem", position: n + 1, url: `${origin}/p/${i.id}`, name: i.name })),
   };
 }
 

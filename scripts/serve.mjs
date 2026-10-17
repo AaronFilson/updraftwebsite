@@ -5,9 +5,12 @@
 //     so the shop and the home page's "Available now" show real (sandbox) pieces locally
 //   node scripts/serve.mjs --catalog e2e/fixtures/catalog.json  answer /api/catalog from a file
 //     (Lighthouse: a shop with pieces, no network, no failed request in the console)
+//   node scripts/serve.mjs --pieces e2e/fixtures/catalog.json  draw /p/<piece> pages and /p/sitemap.xml
+//     from a file, as the API does from Square (--catalog does this too; with --api, from that catalog)
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { renderPiece, gonePage, piecesSitemap } from "../backend/src/piece-page.mjs";
 
 const DIST = path.resolve(import.meta.dirname, "..", "dist");
 const args = process.argv.slice(2);
@@ -15,6 +18,7 @@ const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : u
 const port = Number(args.find((a) => /^\d+$/.test(a)) ?? process.env.PORT ?? 4173);
 const API = option("--api")?.replace(/\/$/, "");
 const CATALOG = option("--catalog");
+const PIECES = option("--pieces") ?? CATALOG;
 const TYPES = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -48,11 +52,23 @@ async function proxy(req, res, url) {
   }
 }
 
+// /p/<piece> and /p/sitemap.xml, as the API draws them (backend/src/piece.mjs), in this build's shell.
+async function piecePage(res, url) {
+  const { items } = PIECES ? JSON.parse(await readFile(PIECES, "utf8")) : await (await fetch(`${API}/api/catalog`)).json();
+  const site = `http://localhost:${port}`;
+  if (url.pathname === "/p/sitemap.xml") return res.writeHead(200, { "content-type": TYPES[".xml"] }).end(piecesSitemap(items, site));
+  const item = items.find((i) => i.id === url.pathname.slice(3));
+  if (!item) return res.writeHead(410, { "content-type": TYPES[".html"] }).end(gonePage());
+  const shell = await readFile(path.join(DIST, "piece-shell.html"), "utf8").catch(() => null);
+  res.writeHead(200, { "content-type": TYPES[".html"] }).end(renderPiece({ item, items, shell, site }));
+}
+
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   if (CATALOG && url.pathname === "/api/catalog")
     return res.writeHead(200, { "content-type": TYPES[".json"], "cache-control": "no-store" }).end(await readFile(CATALOG));
   if (API && url.pathname.startsWith("/api/")) return proxy(req, res, url);
+  if ((PIECES || API) && url.pathname.startsWith("/p/")) return piecePage(res, url);
   let file = path.join(DIST, decodeURIComponent(url.pathname));
   if (!file.startsWith(DIST)) return res.writeHead(400).end();
   try {
@@ -63,6 +79,6 @@ createServer(async (req, res) => {
   }
 }).listen(port, () =>
   console.log(
-    `Serving dist/ at http://localhost:${port}${API ? `, /api/* from ${API}` : ""}${CATALOG ? `, /api/catalog from ${CATALOG}` : ""}`,
+    `Serving dist/ at http://localhost:${port}${API ? `, /api/* from ${API}` : ""}${CATALOG ? `, /api/catalog from ${CATALOG}` : ""}${PIECES ? `, pieces from ${PIECES}` : ""}`,
   ),
 );

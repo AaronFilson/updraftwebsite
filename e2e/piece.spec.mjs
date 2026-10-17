@@ -1,5 +1,5 @@
 // Shop pieces in detail: the detail view (photos, spec line, add to cart, share, links and Back),
-// resized photos with their fallback, type filters, and the product data for search engines.
+// resized photos with their fallback, type filters, and links to each piece's own page.
 import { test, expect } from "@playwright/test";
 import sharp from "sharp";
 import { mockApi, item } from "./mock-api.mjs";
@@ -156,14 +156,16 @@ test("no filters with only a few pieces", async ({ page }) => {
   await expect(page.locator("#filters")).toBeHidden();
 });
 
-test("search engines get product data with price and availability", async ({ page }) => {
+test("cards link to each piece's own page, and search engines get the list of them", async ({ page }) => {
   await mockApi(page, { items: [bowl, item("jar", "Jar", 9000, 0)] });
   await page.goto("/shop.html");
   await expect(page.locator("#p-item-jar")).toBeVisible();
+  await expect(page.locator("#p-item-bowl h3 a")).toHaveAttribute("href", "/p/item-bowl");
+  await expect(page.locator("#p-item-bowl a.media")).toHaveAttribute("href", "/p/item-bowl");
   const data = JSON.parse(await page.locator('head script[type="application/ld+json"]').last().textContent());
-  expect(data.itemListElement.map((e) => [e.item.name, e.item.offers.price, e.item.offers.availability])).toEqual([
-    ["Celadon bowl", "65.00", "https://schema.org/InStock"],
-    ["Jar", "90.00", "https://schema.org/SoldOut"],
+  expect(data.itemListElement.map((e) => [e.position, e.url.replace(/^.*\/p\//, "/p/")])).toEqual([
+    [1, "/p/item-bowl"],
+    [2, "/p/item-jar"],
   ]);
 });
 
