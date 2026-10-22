@@ -60,6 +60,8 @@ h3 { font-size: 1.25rem; margin: 0 0 0.3em; }
 .skip { position: absolute; left: -999px; } .skip:focus { left: 1rem; top: 1rem; z-index: 99; background: var(--surface); padding: .5rem 1rem; }
 
 /* header */
+.sale-banner { margin: 0; padding: .5rem 1rem; text-align: center; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.sale-banner a { color: inherit; }
 .site-header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
 .site-header .wrap { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .25rem 1rem; padding-block: .75rem; }
 .brand { font: 600 1.35rem var(--serif); color: var(--ink); text-decoration: none; }
