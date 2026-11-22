@@ -1,12 +1,30 @@
 # Updraft Pottery Studio website
 
-Static site (plain HTML/CSS/JS) plus a small AWS Lambda that talks to Square.
+Live at [updraftpotterystudio.com](https://updraftpotterystudio.com). Static storefront and gallery (plain HTML/CSS/JS, no framework) backed by three small AWS Lambda functions talking to Square.
+
+## Architecture
 
 ```
-site/      source: HTML templates, CSS, JS (+ js/test/ unit tests), data/*.json, images/ (full-size masters, never uploaded)
-scripts/   build.mjs produces dist/; publish, deploy-api, put-token, serve (local preview)
+Browser ─▶ CloudFront (HTTPS, security headers, CSP, caching)
+            ├─ /*              ─▶ private S3 bucket (OAC) — prebuilt HTML, AVIF/WebP, inlined CSS
+            ├─ /p/*            ─▶ Api Lambda (AWS_IAM OAC) — /p/<id> piece pages + /p/sitemap.xml
+            ├─ /api/img        ─▶ Images Lambda (AWS_IAM OAC, sharp) — allowlisted Square photo resizer (1 yr cache)
+            ├─ /api/checkout   ─▶ Checkout Lambda (AWS_IAM OAC, concurrency 1) — serialized one-of-a-kind checkout
+            └─ /api/*          ─▶ Api Lambda (AWS_IAM OAC) — catalog, shipping/tax quote, newsletter signup
+                                       └─ Square APIs (token from SSM Parameter Store; never in browser or deploys)
+```
+
+Key design choices:
+- **One-of-a-kind checkout safety:** Checkout runs in its own Lambda with reserved concurrency 1, authorises the card, re-checks live stock against Square plus an in-memory recent-sales ledger (bridging Square's inventory lag), and either captures or releases the hold. Proven with a 12-buyer live contention test below.
+- **Locked-down origins:** S3 is private and every Lambda Function URL requires `AWS_IAM`, signed by CloudFront via Origin Access Control (the browser hashes POST bodies in `x-amz-content-sha256` with WebCrypto). GitHub Actions deploys via OIDC with no stored AWS keys.
+- **Fast by default:** Build-time AVIF/WebP generation, inlined CSS, preloaded self-hosted font, Square SDK loaded only when the cart is non-empty, and on-demand `sharp` resizing for Square photos. CI enforces ESLint, TypeScript (`checkJs`), Prettier, `cfn-lint`, `npm audit`, CodeQL, 60+ unit tests, cross-browser Playwright + axe-core checks, and Lighthouse phone budgets (98–100).
+
+```
+site/      source: HTML templates, CSS, JS (+ js/test/ unit tests), data/*.json,
+           images/ (build inputs, never uploaded), images-full/ (optional full-size lightbox JPEGs)
+scripts/   build.mjs produces dist/; publish, deploy-api, put-token, load-items, warm-photos, serve (local preview)
 dist/      generated; this is what gets uploaded to S3
-backend/   Lambda: catalog, tax quote, checkout, signup (Square Catalog, Orders, Payments, Customers APIs) + test/
+backend/   Lambda: catalog, shipping/tax quote, checkout, signup, piece pages, photo resizer (Square APIs) + test/
 e2e/       browser tests (Playwright) against dist/ with the API mocked
 deploy/    CloudFormation for hosting, stage settings, IAM policies; see deploy/README.md
 ```
@@ -15,7 +33,7 @@ deploy/    CloudFormation for hosting, stage settings, IAM policies; see deploy/
 
 ```
 npm ci
-SITE_URL=https://yourdomain.com npm run build
+SITE_URL=https://updraftpotterystudio.com npm run build
 npm run preview
 ```
 
@@ -23,8 +41,9 @@ The build:
 - makes 400 / 800px AVIF and 400 / 800 / 1600px WebP copies of each photo (cached in `.cache/`). The grid uses 400 or 800 depending on screen (AVIF where the browser supports it); 1600 loads only when a photo is opened.
 - puts a content hash in every image file name, so a replaced photo gets a new URL automatically.
 - renders the galleries into the pages from `site/data/*.json`, so pages need no data requests.
+- renders an optional site-wide announcement banner from `banner` in `site/data/site.json` (`{ text, linkText, href, until }`); omitted at build time once `until` has passed, and hidden live by `site/js/banner.js` if `until` passes between publishes.
 - adds canonical, Open Graph and icon tags to every page, plus `robots.txt`, `site.webmanifest` and (with `SITE_URL` set) `sitemap.xml`, which names the pages' sitemap and the pieces' (`/p/sitemap.xml`, from the API).
-- builds `piece-shell.html`, the page the API puts each piece in at `/p/<id>` (`backend/src/piece-page.mjs`); `npm run preview -- --pieces e2e/fixtures/catalog.json` draws them locally.
+- builds `piece-shell.html`, the page the API puts each piece in at `/p/<id>` (`backend/src/piece-page.mjs`); `npm run preview -- --pieces e2e/fixtures/pieces.json` draws them locally.
 - bundles, minifies and content-hashes the JS and CSS, and strips all comments from HTML/CSS/JS.
 - the Square payment SDK loads only once something is in the cart.
 

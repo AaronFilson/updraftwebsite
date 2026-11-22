@@ -29,7 +29,7 @@ test("stock shows on the cards: sold pieces, one-of-a-kind limits, open-ended it
   await expect(card(page, "Tenmoku jar").getByRole("button")).toHaveText("Sold");
   await expect(card(page, "Tenmoku jar").locator(".sold-badge")).toBeVisible();
   await card(page, "Celadon bowl")
-    .getByRole("button", { name: /Add Celadon bowl/ })
+    .getByRole("button", { name: /Add to cart: Celadon bowl/ })
     .click();
   await expect(card(page, "Celadon bowl").getByRole("button")).toHaveText("In cart");
   await expect(page.locator(".cart-line", { hasText: "Celadon bowl" }).getByRole("button")).toHaveText("Remove");
@@ -177,6 +177,18 @@ test("a busy checkout (HTTP 429) is retried with a message, then succeeds", asyn
   await page.locator("#pay").click();
   await expect(page.locator("#cart-lines")).toContainText("Thank you!", { timeout: 15_000 });
   expect(tries).toBe(3);
+});
+
+test("a non-JSON checkout error (e.g. a 502 page) shows a plain message, not a parse error", async ({ page }) => {
+  await mockApi(page, {
+    items: [mug],
+    checkout: (route) => route.fulfill({ status: 502, contentType: "text/html", body: "<html><body>Bad Gateway</body></html>" }),
+  });
+  await page.goto("/shop.html");
+  await card(page, "Everyday mug").getByRole("button").click();
+  await fillCheckout(page);
+  await page.locator("#pay").click();
+  await expect(page.locator("#error")).toHaveText("Payment failed.");
 });
 
 test.describe("on a phone", () => {

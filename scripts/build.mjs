@@ -364,15 +364,36 @@ const [header, footer, signup] = await Promise.all(
   ["header.html", "footer.html", "signup.html"].map((f) => readFile(path.join(SRC, "partials", f), "utf8")),
 );
 
+// Optional site-wide announcement banner from site/data/site.json:
+//   { "text": "...", "linkText": "...", "href": "https://... or /...", "until": "2026-10-24T16:00:00-07:00" }
+// Omitted at build time once `until` has passed; site/js/banner.js also removes it if `until` passes between publishes.
+function renderBanner(b, now = Date.now()) {
+  if (!b || !b.text?.trim()) return "";
+  let untilAttr = "";
+  if (b.until) {
+    const until = Date.parse(b.until);
+    if (Number.isNaN(until)) throw new Error(`site.json banner.until looks wrong: ${b.until}`);
+    if (now >= until) return "";
+    untilAttr = ` data-until="${esc(b.until)}"`;
+  }
+  const href = b.href?.trim() ?? "";
+  const linkText = b.linkText?.trim() ?? "";
+  if (Boolean(href) !== Boolean(linkText)) throw new Error("site.json banner needs both linkText and href, or neither");
+  if (href && !/^(https?:\/\/|\/)/.test(href)) throw new Error(`site.json banner.href must start with https://, http://, or /: ${href}`);
+  const link = href ? ` <a href="${esc(href)}">${esc(linkText)}</a>` : "";
+  return `  <div class="sale-banner" role="region" aria-label="Announcement"${untilAttr}><p>${esc(b.text.trim())}${link}</p></div>\n`;
+}
+
 // Site-wide settings. The policy page (and links to it) is only built once a contact email is set,
 // so a half-finished page can't be published.
 const siteData = JSON.parse(await readFile(path.join(SRC, "data", "site.json"), "utf8"));
 const email = siteData.contactEmail?.trim() ?? "";
 if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`site.json contactEmail looks wrong: ${email}`);
 const mailto = email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : "";
+const bannerHtml = renderBanner(siteData.banner);
 
 const common = (current, js = assets.site) => ({
-  "<!--header-->": header.replace("{{nav}}", nav(current)),
+  "<!--header-->": header.replace("{{banner}}", bannerHtml).replace("{{nav}}", nav(current)),
   "<!--footer-->": footer,
   // ~4KB gzipped: inlining saves a render-blocking request on every page.
   // Fetch the heading font alongside the page instead of after the CSS is read, so the headline swaps less.

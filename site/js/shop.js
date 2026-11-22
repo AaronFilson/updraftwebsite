@@ -16,6 +16,7 @@ import {
 import { picture } from "./photos.js";
 import { createPieceView } from "./piece-view.js";
 import { addToCart, getCart, setQuantity, updateCart, clearCart, cartCount, lineMax, money } from "./cart.js";
+import "./banner.js";
 import "./cart-badge.js";
 import "./menu.js";
 import "./signup.js";
@@ -135,10 +136,7 @@ function buyControls(item, onSync = (_sold) => {}) {
     const full = left !== null && inCart(v.id) >= left;
     btn.disabled = left === 0 || full;
     btn.textContent = left === 0 ? "Sold" : full ? "In cart" : "Add to cart";
-    btn.setAttribute(
-      "aria-label",
-      left === 0 ? `${item.name} is sold` : full ? `${item.name} is in your cart` : `Add ${item.name} to cart`,
-    );
+    btn.setAttribute("aria-label", left === 0 ? `Sold: ${item.name}` : full ? `In cart: ${item.name}` : `Add to cart: ${item.name}`);
     onSync(soldOut(item));
   };
   cardSyncs.add(sync);
@@ -466,7 +464,7 @@ function requestQuote() {
         fulfillment: form.fulfillment.value,
         destination: shipDestination() ?? undefined,
       });
-      const out = await res.json();
+      const out = await res.json().catch(() => ({}));
       if (seq !== quoteSeq) return; // a newer cart change is already being looked up
       if (res.status === 409 && out.sold) {
         quoting = false;
@@ -649,7 +647,7 @@ form.addEventListener("submit", async (e) => {
       expectedTotal: quote?.total,
     };
     const res = await postCheckout(body);
-    const out = await res.json();
+    const out = await res.json().catch(() => ({}));
     if (res.status === 409 && out.sold) {
       // A piece sold while they were paying; the card was not charged.
       resetIdem();

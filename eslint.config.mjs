@@ -19,11 +19,12 @@ export default [
       "playwright-report/",
       "test-results/",
       ".lighthouseci/",
+      ".claude/",
     ],
   },
   // Browser code, bundled by esbuild (scripts/build.mjs defines __SITE_CONFIG__).
   {
-    files: ["site/js/**/*.js", "site/p.js"],
+    files: ["site/js/**/*.js"],
     ...js.configs.recommended,
     languageOptions: { sourceType: "module", globals: { ...globals.browser, __SITE_CONFIG__: "readonly" } },
     rules: { ...js.configs.recommended.rules, ...bugRules },

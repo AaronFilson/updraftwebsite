@@ -89,7 +89,7 @@ test("the detail view: photos, full description, add to cart, then Escape return
   await expect(dialog(page).locator(".piece-count")).toHaveText("2 of 3");
   await dialog(page).getByRole("button", { name: "Previous photo" }).click();
   await expect(dialog(page).locator(".piece-count")).toHaveText("1 of 3");
-  await dialog(page).getByRole("button", { name: "Add Celadon bowl to cart" }).click();
+  await dialog(page).getByRole("button", { name: "Add to cart: Celadon bowl" }).click();
   await expect(dialog(page).locator(".piece-buy .btn")).toHaveText("In cart");
   await expect(page.locator("#p-item-bowl .btn")).toHaveText("In cart"); // the card follows
   await page.keyboard.press("Escape");

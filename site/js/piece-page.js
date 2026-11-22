@@ -58,10 +58,7 @@ if (piece && box && piece.variations.some((v) => v.stock !== 0)) {
     price.textContent = money(v.price, v.currency);
     btn.disabled = v.stock === 0 || full;
     btn.textContent = v.stock === 0 ? "Sold" : full ? "In cart" : "Add to cart";
-    btn.setAttribute(
-      "aria-label",
-      v.stock === 0 ? `${piece.name} is sold` : full ? `${piece.name} is in your cart` : `Add ${piece.name} to cart`,
-    );
+    btn.setAttribute("aria-label", v.stock === 0 ? `Sold: ${piece.name}` : full ? `In cart: ${piece.name}` : `Add to cart: ${piece.name}`);
   };
   sel.addEventListener("change", sync);
   btn.addEventListener("click", () => {

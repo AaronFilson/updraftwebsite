@@ -1,11 +1,8 @@
+import "./banner.js";
 import "./cart-badge.js";
 import "./menu.js";
 import "./hero.js";
 import "./signup.js";
-
-// Event banner (site/partials/header.html): gone once its data-until time has passed.
-const banner = /** @type {HTMLElement | null} */ (document.querySelector(".sale-banner"));
-if (banner && Date.now() >= Date.parse(banner.dataset.until)) banner.remove();
 
 // Home page only: a few pieces from the shop (a separate chunk, so other pages don't load it).
 if (document.getElementById("available")) import("./available.js");

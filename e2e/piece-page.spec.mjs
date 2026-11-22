@@ -34,9 +34,9 @@ test("a piece's page has its name, price, product data and its own address", asy
 
 test("Add to cart on a piece's page fills the shop's cart", async ({ page }) => {
   await page.goto("/p/fixture-bowl");
-  await page.getByRole("button", { name: "Add Celadon footed bowl to cart" }).click();
+  await page.getByRole("button", { name: "Add to cart: Celadon footed bowl" }).click();
   await expect(page.locator(".piece-added")).toContainText("Added to your cart (1 item).");
-  await expect(page.getByRole("button", { name: "Celadon footed bowl is in your cart" })).toBeDisabled(); // one of a kind
+  await expect(page.getByRole("button", { name: "In cart: Celadon footed bowl" })).toBeDisabled(); // one of a kind
   await expect(page.locator("[data-cart-count]").first()).toHaveText("1");
   await page.getByRole("link", { name: "View cart and check out" }).click();
   await expect(page).toHaveURL(/\/shop\.html#cart$/);

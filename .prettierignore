@@ -11,4 +11,6 @@ backend/.build-images/
 playwright-report/
 test-results/
 .lighthouseci/
+.claude/
+.idea/
 package-lock.json

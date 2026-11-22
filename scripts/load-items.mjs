@@ -1,5 +1,5 @@
 // Loads a batch of pieces into a stage's Square catalog: categories, the "Ship weight (lb)" attribute,
-// then each item with its price, description ("<glaze> · <size>" then "Lantern motif."), category, ship
+// then each item with its price, description ("<glaze> · <size>" then any batch/item description), category, ship
 // weight, photos (cropped as the batch says, see scripts/listing-photo.mjs) and a stock count of 1 at the stage's location.
 // Without --go it only prints what it would do. Items whose name is already in the catalog are skipped,
 // so a run that stopped part way can be run again.
@@ -66,7 +66,8 @@ try {
       console.log(`skip   ${it.name} (already in the catalog)`);
       continue;
     }
-    const description = `${batch.glaze} · ${it.size}\nLantern motif.`;
+    const spec = [it.glaze ?? batch.glaze, it.size].filter(Boolean).join(" · ");
+    const description = [spec, it.description ?? batch.description].filter(Boolean).join("\n");
     console.log(
       `${GO ? "create" : "would create"} ${it.name}  $${it.price}  [${it.category}]  ship ${it.shipLb} lb  ${it.photos.length} photo(s)`,
     );

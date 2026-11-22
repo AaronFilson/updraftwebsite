@@ -2,7 +2,7 @@
 
 This plan helps people find the studio and its pieces in search, and gives shared links and the newsletter more to work with. It was written on 16 October 2026 against master 6a9f848, after reading the site's build and backend and glazecalc's search plan (`glazecalc/docs/seo-plan.md`, ADR 16). Effort: S = under a day, M = one to three days, L = a week or more. Paths are from the repo root.
 
-## Status: items 1–3 built (16 October 2026, branch `seo-pieces`), not yet deployed
+## Status: items 1–3 merged to `master` (PR #9 / PR #11); items 4–6 remain open
 
 Built as planned, with these differences:
 
