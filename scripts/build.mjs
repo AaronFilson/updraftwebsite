@@ -58,7 +58,6 @@ const NAV = [
 ];
 
 const esc = (s = "") => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const unesc = (s = "") => s.replace(/&(amp|lt|gt|quot);/g, (_, e) => ({ amp: "&", lt: "<", gt: ">", quot: '"' })[e]);
 const jsonForScript = (data) => JSON.stringify(data).replace(/</g, "\\u003c");
 const mb = (bytes) => (bytes / 1048576).toFixed(1) + " MB";
 const hash = (buf) => createHash("sha256").update(buf).digest("hex").slice(0, 8);
@@ -391,33 +390,36 @@ function crumbsSchema(name) {
   };
 }
 
-// Reads <dt id="...">...</dt><dd>...</dd> from terms.html so glossary HTML and JSON-LD stay in lockstep.
-function termsFromHtml(html, url) {
-  const plain = (s) =>
-    unesc(s.replace(/<[^>]+>/g, ""))
-      .replace(/\s+/g, " ")
-      .trim();
-  const terms = [...html.matchAll(/<dt id="([^"]+)">([\s\S]*?)<\/dt>\s*<dd>([\s\S]*?)<\/dd>/g)].map(([, id, term, def]) => ({
+// Renders the ceramic glossary (site/data/terms.json) into both HTML (<dl>) and DefinedTermSet JSON-LD,
+// so definitions live in one place with no HTML tag stripping.
+function termsHtml(terms) {
+  const items = terms.map((t) => {
+    const more = t.link ? ` ${esc(t.link.before)}<a href="${esc(t.link.href)}">${esc(t.link.text)}</a>${esc(t.link.after)}` : "";
+    return `<dt id="${esc(t.id)}">${esc(t.term)}</dt><dd>${esc(t.definition)}${more}</dd>`;
+  });
+  return `<dl class="terms">${items.join("\n")}</dl>`;
+}
+
+function termsSchema(terms, url) {
+  return terms.map((t) => ({
     "@type": "DefinedTerm",
-    "@id": `${url}#${id}`,
-    url: `${url}#${id}`,
-    name: plain(term),
-    description: plain(def),
+    "@id": `${url}#${t.id}`,
+    url: `${url}#${t.id}`,
+    name: t.term,
+    description: t.link ? `${t.definition} ${t.link.before}${t.link.text}${t.link.after}` : t.definition,
     inDefinedTermSet: url,
   }));
-  if (!terms.length) throw new Error('terms.html: expected <dt id="..."> glossary entries');
-  return terms;
 }
 
 // Structured data (@graph) per static page. Piece pages get Product + BreadcrumbList from backend/src/piece-page.mjs.
-function pageSchema(name, html, { ogs, icon512, email, meta, archive }) {
+function pageSchema(name, html, { ogs, icon512, email, meta, archive, terms }) {
   if (name === SHELL || name === "error.html" || /<meta name="robots" content="noindex"/.test(html)) return null;
   const url = pageUrl(name);
   const storeId = `${SITE_URL}/#store`;
   const websiteId = `${SITE_URL}/#website`;
   const personId = `${SITE_URL}/about.html#aaron`;
-  const title = unesc(html.match(/<title>(.*?)<\/title>/)?.[1] ?? SITE_NAME);
-  const desc = unesc(html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "");
+  const title = (html.match(/<title>(.*?)<\/title>/)?.[1] ?? SITE_NAME).replaceAll("&amp;", "&");
+  const desc = (html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "").replaceAll("&amp;", "&");
 
   if (name === "index.html") {
     return {
@@ -545,7 +547,7 @@ function pageSchema(name, html, { ogs, icon512, email, meta, archive }) {
       name: "Pottery and Ceramic Glaze Glossary",
       description: desc,
       isPartOf: { "@id": websiteId },
-      hasDefinedTerm: termsFromHtml(html, url),
+      hasDefinedTerm: termsSchema(terms, url),
     };
   } else if (name === "shop.html") {
     primary = {
@@ -637,13 +639,14 @@ async function page(name, replacements, shared) {
 await rm(OUT, { recursive: true, force: true });
 await mkdir(OUT, { recursive: true });
 
-const [slugs, workData, archiveData, artistData, kilnShedData, sodaKilnData] = await Promise.all([
+const [slugs, workData, archiveData, artistData, kilnShedData, sodaKilnData, termsData] = await Promise.all([
   imageSlugs(),
   readData("work.json"),
   readData("archive.json"),
   readData("artist.json"),
   readData("kiln-shed.json"),
   readData("soda-kiln.json"),
+  readData("terms.json"),
 ]);
 const meta = await images(slugs);
 const ogs = await ogImages();
@@ -700,7 +703,7 @@ const common = (current, js = assets.site) => ({
   "{{contactEmail}}": esc(email),
   "{{signup}}": signup, // in the footer; the home page places it mid-page instead
 });
-const shared = { ogs, apple, icon512, email, meta, archive: archiveData };
+const shared = { ogs, apple, icon512, email, meta, archive: archiveData, terms: termsData };
 
 const sizes = {
   "index.html": await page(
@@ -746,7 +749,7 @@ const sizes = {
     },
     shared,
   ),
-  "terms.html": await page("terms.html", common("/terms.html"), shared),
+  "terms.html": await page("terms.html", { ...common("/terms.html"), "<!--terms-->": termsHtml(termsData) }, shared),
   "care.html": await page("care.html", common("/care.html"), shared),
   ...(email ? { "policies.html": await page("policies.html", common("/policies.html"), shared) } : {}),
   "shop.html": await page("shop.html", common("/shop.html", assets.shop), shared),

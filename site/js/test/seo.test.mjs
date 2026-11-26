@@ -5,13 +5,12 @@ import path from "node:path";
 
 const SITE = path.resolve(import.meta.dirname, "..", "..");
 const PAGES = ["index.html", "shop.html", "past-work.html", "about.html", "kilns.html", "terms.html", "care.html", "policies.html"];
-const unesc = (s = "") => s.replace(/&(amp|lt|gt|quot);/g, (_, e) => ({ amp: "&", lt: "<", gt: ">", quot: '"' })[e]);
 
 test("every indexable page has one h1, a title <= 60 chars, and a 70-160 char description", async () => {
   for (const name of PAGES) {
     const html = await readFile(path.join(SITE, name), "utf8");
-    const title = unesc(html.match(/<title>(.*?)<\/title>/)?.[1] ?? "");
-    const desc = unesc(html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "");
+    const title = (html.match(/<title>(.*?)<\/title>/)?.[1] ?? "").replaceAll("&amp;", "&");
+    const desc = (html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "").replaceAll("&amp;", "&");
     const h1s = html.match(/<h1\b/g) ?? [];
     assert.equal(h1s.length, 1, `${name}: expected one <h1>`);
     assert.ok(title.length >= 20 && title.length <= 60, `${name}: title length ${title.length} ("${title}")`);
@@ -20,11 +19,17 @@ test("every indexable page has one h1, a title <= 60 chars, and a 70-160 char de
   }
 });
 
-test("every term in terms.html has a unique anchor id", async () => {
-  const html = await readFile(path.join(SITE, "terms.html"), "utf8");
-  const dts = [...html.matchAll(/<dt\b([^>]*)>/g)];
-  assert.ok(dts.length >= 15);
-  const ids = dts.map(([, attrs]) => attrs.match(/\bid="([a-z0-9-]+)"/)?.[1]);
-  assert.ok(ids.every(Boolean), "every <dt> must have a lowercase kebab-case id");
-  assert.equal(new Set(ids).size, ids.length, "duplicate <dt id> in terms.html");
+test("every term in terms.json has a unique anchor id and valid link", async () => {
+  const terms = JSON.parse(await readFile(path.join(SITE, "data", "terms.json"), "utf8"));
+  assert.ok(terms.length >= 18);
+  const ids = terms.map((t) => t.id);
+  assert.ok(
+    ids.every((id) => /^[a-z0-9-]+$/.test(id)),
+    "every term must have a lowercase kebab-case id",
+  );
+  assert.equal(new Set(ids).size, ids.length, "duplicate term id in terms.json");
+  for (const t of terms) {
+    assert.ok(t.term?.trim() && t.definition?.trim(), `${t.id}: missing term or definition`);
+    if (t.link) assert.match(t.link.href, /^(https:\/\/|\/)/, `${t.id}: invalid link href`);
+  }
 });
