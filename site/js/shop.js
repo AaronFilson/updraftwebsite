@@ -235,8 +235,8 @@ window.addEventListener("hashchange", () => openFromHash(true));
 // ---- browse by type (Square categories), once there are enough pieces ------------------------
 function renderFilters(list) {
   const bar = $("#filters");
-  if (!showTypeFilters(list)) return;
   const want = new URLSearchParams(location.search).get("type") ?? "";
+  if (!showTypeFilters(list, want)) return;
   const types = typeCounts(list);
   let current = types.some((t) => t.name === want) ? want : "";
   const options = [{ name: "", label: `All (${list.length})` }, ...types.map((t) => ({ name: t.name, label: `${t.name} (${t.count})` }))];

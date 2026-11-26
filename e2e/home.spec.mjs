@@ -5,7 +5,7 @@ import { mockApi, item } from "./mock-api.mjs";
 
 const strip = (page) => page.locator("#available");
 
-test("Available now shows up to four pieces still for sale, linked to their shop cards", async ({ page }) => {
+test("Available now shows up to four pieces still for sale, linked to their piece pages", async ({ page }) => {
   const options = {
     ...item("set", "Mug set", 3000, null),
     variations: [
@@ -30,7 +30,7 @@ test("Available now shows up to four pieces still for sale, linked to their shop
   await expect(cards.locator("h3")).toHaveText(["Celadon bowl", "Mug set", "Cup A", "Cup B"]); // the sold jar is skipped
   await expect(cards.nth(0).locator(".price")).toHaveText("$65.00");
   await expect(cards.nth(1).locator(".price")).toHaveText("From $30.00");
-  await expect(cards.nth(0)).toHaveAttribute("href", "/shop.html#p-item-bowl");
+  await expect(cards.nth(0)).toHaveAttribute("href", "/p/item-bowl");
   await expect(strip(page).getByRole("link", { name: "Shop all pieces →" })).toHaveAttribute("href", "/shop.html");
 });
 

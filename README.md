@@ -60,6 +60,8 @@ The build:
 
 Products come straight from your Square catalog. Add items in Square Dashboard > Items & services, with a price and a photo. They appear on the shop within a minute. Shop prices and tax are always calculated by Square on the server.
 
+**Naming & descriptions for search:** Square item names become `/p/<id>` `<h1>` headings and `<title>` tags, and the first line of the Square description becomes the spec line and search snippet. Favor specific, plain-language names (e.g. `"Celadon porcelain mug, 12 oz"` or `"Soda-fired stoneware vase"`) and put clay body, glaze, and dimensions on line 1 (`"Cone 10 stoneware · Tacoma crackle 26 · 9½″ × 3¾″"`). Batch files for `scripts/load-items.mjs` accept optional `clay`, `glaze`, and `description` fields at both the batch and item level.
+
 **Shipping** is priced per piece, from the delivery ZIP: one double-boxed parcel per piece, at the published label price for its billed weight and zone from Tacoma, rounded up to whole dollars (`backend/src/shipping.mjs`). UPS Ground carries everything it can; USPS Ground Advantage takes PO boxes, military addresses, Alaska, Hawaii and the territories. Each item needs a **Ship weight (lb)** custom attribute in Square: the billed weight of the packed box (the larger of actual and dimensional weight, from the pack-and-ship planner). An item without one can be picked up but not shipped. Rates and zones live in `backend/src/shipping-rates.json`; update it when UPS or USPS change prices (USPS holiday prices end 2027-01-17; the UPS fuel surcharge changes weekly).
 
 ## Email signup

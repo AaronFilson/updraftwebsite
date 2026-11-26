@@ -66,8 +66,17 @@ export function typeCounts(items) {
   return [...counts].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
 }
 
-/** Show type filters only with at least FILTER_MIN_PIECES pieces in two or more types. @param {any[]} items */
-export const showTypeFilters = (items) => items.length >= FILTER_MIN_PIECES && typeCounts(items).length >= 2;
+/**
+ * Show type filters with at least FILTER_MIN_PIECES pieces in two or more types, or whenever the
+ * URL already asks for a known type (e.g. from a piece page's category breadcrumb).
+ * @param {any[]} items
+ * @param {string} [requestedType]
+ */
+export function showTypeFilters(items, requestedType = "") {
+  const types = typeCounts(items);
+  if (requestedType && types.some((t) => t.name === requestedType)) return true;
+  return items.length >= FILTER_MIN_PIECES && types.length >= 2;
+}
 
 /**
  * schema.org list of the shop's pieces, each by its own page (/p/ITEM), which carries the piece's

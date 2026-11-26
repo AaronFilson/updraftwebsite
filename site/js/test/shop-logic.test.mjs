@@ -87,6 +87,8 @@ test("spec line, the rest of the description, type filters and product data", as
   });
   const few = [piece("a", "Bowls"), piece("b", "Mugs")];
   assert.equal(showTypeFilters(few), false); // too few pieces to need filters
+  assert.equal(showTypeFilters(few, "Bowls"), true); // unless a link (e.g. breadcrumb) already asked for a type
+  assert.equal(showTypeFilters(few, "Platters"), false); // unknown type stays ignored
   const many = Array.from({ length: FILTER_MIN_PIECES }, (_, n) => piece(`p${n}`, n % 3 ? "Mugs" : "Bowls"));
   assert.equal(showTypeFilters(many), true);
   assert.equal(showTypeFilters(many.map((p) => ({ ...p, category: "Mugs" }))), false); // one type: nothing to filter

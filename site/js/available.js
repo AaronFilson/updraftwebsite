@@ -1,5 +1,5 @@
-// Home page "Available now": the first few pieces still for sale, each linking to its card in the
-// shop. If the shop can't be reached the section is hidden; the hero's Shop button still works.
+// Home page "Available now": the first few pieces still for sale, each linking to its own /p/<id>
+// page. If the shop can't be reached the section is hidden; the hero's Shop button still works.
 import { getJson } from "./api.js";
 import { money } from "./cart.js";
 import { availableNow, fromPrice } from "./shop-logic.js";
@@ -11,7 +11,7 @@ const list = document.getElementById("available-list");
 
 /** @param {import("./shop-logic.js").Item} item */
 function card(item) {
-  const a = Object.assign(document.createElement("a"), { className: "card product-link", href: `/shop.html#p-${item.id}` });
+  const a = Object.assign(document.createElement("a"), { className: "card product-link", href: `/p/${item.id}` });
   a.append(
     item.image
       ? picture(item.image, { sizes: "(max-width: 599px) 46vw, 260px" })

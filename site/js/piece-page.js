@@ -4,6 +4,7 @@
 // in the shop (photos.js), before falling back to Square's own.
 import { addToCart, getCart, cartCount, money } from "./cart.js";
 import { picture, RETRY_MS } from "./photos.js";
+import { sharePiece } from "./share.js";
 
 /** @typedef {{ id: string, name: string, price: number, currency?: string, stock: number | null }} Variation */
 const dataEl = document.getElementById("piece-data");
@@ -34,6 +35,21 @@ for (const img of /** @type {NodeListOf<HTMLImageElement>} */ (document.querySel
 }
 
 const inCart = (/** @type {string} */ id) => getCart().find((l) => l.variationId === id)?.quantity ?? 0;
+
+// Progressive Share button beside Care & use (works on sold pieces too; omitted when JS is off).
+const more = document.querySelector(".piece-page .piece-more");
+if (piece && more) {
+  const shareBtn = Object.assign(document.createElement("button"), {
+    type: "button",
+    className: "link-btn piece-share",
+    textContent: "Share this piece",
+  });
+  const shared = Object.assign(document.createElement("p"), { className: "piece-shared" });
+  shared.setAttribute("role", "status");
+  shareBtn.addEventListener("click", () => sharePiece(piece, shared));
+  more.prepend(shareBtn);
+  more.after(shared);
+}
 
 if (piece && box && piece.variations.some((v) => v.stock !== 0)) {
   const many = piece.variations.length > 1;

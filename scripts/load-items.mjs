@@ -66,7 +66,7 @@ try {
       console.log(`skip   ${it.name} (already in the catalog)`);
       continue;
     }
-    const spec = [it.glaze ?? batch.glaze, it.size].filter(Boolean).join(" · ");
+    const spec = [it.clay ?? batch.clay, it.glaze ?? batch.glaze, it.size].filter(Boolean).join(" · ");
     const description = [spec, it.description ?? batch.description].filter(Boolean).join("\n");
     console.log(
       `${GO ? "create" : "would create"} ${it.name}  $${it.price}  [${it.category}]  ship ${it.shipLb} lb  ${it.photos.length} photo(s)`,
