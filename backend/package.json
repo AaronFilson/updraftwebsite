@@ -6,7 +6,7 @@
     "test": "node --test"
   },
   "dependencies": {
-    "square": "^46.0.0"
+    "square": "^46.1.0"
   },
   "private": true,
   "type": "module"
