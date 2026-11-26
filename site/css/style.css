@@ -247,7 +247,8 @@ body:has(.cart-bar:not([hidden])) footer { padding-bottom: 5.5rem; } /* so the b
 [hidden] { display: none !important; }
 
 .page-title { font-size: clamp(2rem, 6vw, 3rem); }
-main > section + section, .hero + section { padding-top: 0; } /* consecutive sections: one gap, not two */
+main > .crumbs { padding-top: 1.25rem; }
+main > .crumbs + section, main > section + section, .hero + section { padding-top: 0; } /* consecutive sections: one gap, not two */
 .panel-title { font-size: 1.5rem; }
 .muted { color: var(--muted); }
 .wide { width: 100%; }
@@ -331,7 +332,7 @@ footer p { margin: 0; }
 .footer-links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: .35rem 1.25rem; }
 
 @media print {
-  .sale-banner, .site-header nav, .skip, .footer-links, #cart, .cart-bar { display: none; }
+  .sale-banner, .site-header nav, .crumbs, .skip, .footer-links, #cart, .cart-bar { display: none; }
   .site-header { position: static; backdrop-filter: none; }
   .card { box-shadow: none; break-inside: avoid; }
 }

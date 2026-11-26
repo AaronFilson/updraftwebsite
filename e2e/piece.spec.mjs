@@ -149,11 +149,16 @@ test("type filters appear once there are enough pieces, and keep their choice in
   await expect(page.locator("#products .card:visible")).toHaveCount(3);
 });
 
-test("no filters with only a few pieces", async ({ page }) => {
-  await mockApi(page, { items: many.slice(0, 4) });
+test("no filters with only a few pieces, unless a link asks for a known type", async ({ page }) => {
+  const few = [many[0], many[1], many[5]]; // 2 Mugs, 1 Bowls (< FILTER_MIN_PIECES)
+  await mockApi(page, { items: few });
   await page.goto("/shop.html");
-  await expect(page.locator("#products .card")).toHaveCount(4);
+  await expect(page.locator("#products .card")).toHaveCount(3);
   await expect(page.locator("#filters")).toBeHidden();
+
+  await page.goto("/shop.html?type=Bowls");
+  await expect(page.locator("#filters")).toBeVisible();
+  await expect(page.locator("#products .card:visible")).toHaveCount(1);
 });
 
 test("cards link to each piece's own page, and search engines get the list of them", async ({ page }) => {

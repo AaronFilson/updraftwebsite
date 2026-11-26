@@ -2,15 +2,15 @@
 
 This plan helps people find the studio and its pieces in search, and gives shared links and the newsletter more to work with. It was written on 16 October 2026 against master 6a9f848, after reading the site's build and backend and glazecalc's search plan (`glazecalc/docs/seo-plan.md`, ADR 16). Effort: S = under a day, M = one to three days, L = a week or more. Paths are from the repo root.
 
-## Status: items 1–3 merged to `master` (PR #9 / PR #11); items 4–6 remain open
+## Status: items 1–5 & 7 built; item 6 (external search accounts) remains open
 
-Built as planned, with these differences:
+Built across `seo-pieces` (PRs #9 / #11) and the follow-up SEO & breadcrumbs round:
 
-- **The pieces' sitemap is `/p/sitemap.xml`,** not `/sitemap-pieces.xml`. The existing `/p/*` route already reaches the API, so CloudFront needs no new behaviour, and a sitemap under `/p/` may list exactly the pages under `/p/`.
-- **The shell is `piece-shell.html`,** kept out by `robots.txt`. On staging it carries the build's `noindex`, so staging's piece pages do too.
-- **The piece page has its own Add to cart** (`site/js/piece-page.js`), not only a link into the shop. Without the script it shows "Buy in the shop".
-- **The shop's opening words (item 3) are unchanged:** they wait on decision 2.
-- Decisions 1 and 5 went as recommended: sold pieces keep their page, and a card's name links to `/p/<id>` while a click still opens the detail view.
+- **Piece pages & sitemap (`/p/<id>`, `/p/sitemap.xml`):** Live in `piece-shell.html` with `Add to cart`, progressive `Share this piece`, `Home › Shop › <Category> › <Piece>` breadcrumbs, `Product` JSON-LD (including `weight` in `LBR` from Square's `ship_lb`, `material`, `countryOfOrigin`, `availableDeliveryMethod`, and `MerchantReturnPolicy`), and `<image:image>` entries for every piece photo in `/p/sitemap.xml`.
+- **Site-wide breadcrumbs:** Every static subpage renders `<nav class="crumbs">` and matching `BreadcrumbList` JSON-LD; `/shop.html?type=<Category>` filters even when fewer than 8 pieces are listed.
+- **Image discoverability:** Gallery files emit descriptive slugged names (`/img/archive/01-green-footed-bowl-800-<hash>.webp`), `sitemap-pages.xml` includes `<image:image>` URLs for all high-res gallery photos, and `past-work.html` exposes all 60 archive pieces and descriptions via `VisualArtwork` JSON-LD.
+- **Structured data & search copy (items 3–5):** `OnlineStore` + `WebSite` on `/`, `ProfilePage` + `Person` on `/about.html`, `CollectionPage` + `Article`s on `/kilns.html`, `DefinedTermSet` with `#id` deep-links on `/terms.html`, `CollectionPage` + static intro copy on `/shop.html`, and 20–60 char titles / 70–160 char descriptions enforced by tests (item 7).
+- **Remaining owner tasks (item 6):** Google Search Console, Bing Webmaster Tools, Google Business Profile, Google Merchant Center free listings, and Pinterest domain verification.
 
 ## Where the site stands
 

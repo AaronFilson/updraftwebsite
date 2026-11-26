@@ -1,7 +1,11 @@
 // Browser tests (e2e/) against the built site, in Chromium, Firefox and WebKit (Safari's engine).
 // The shop's API is mocked per test, so runs are repeatable and need no AWS or Square access.
 //   npm run build && npm run test:e2e
+import { existsSync } from "node:fs";
 import { defineConfig, devices } from "@playwright/test";
+
+// Locally: Chrome on macOS, Edge on Windows; CI installs Playwright's Chromium.
+const localChannel = existsSync("/Applications/Google Chrome.app") ? "chrome" : "msedge";
 
 export default defineConfig({
   testDir: "e2e",
@@ -18,8 +22,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
   },
   projects: [
-    // Locally this machine has Edge rather than Playwright's Chromium; CI installs Chromium.
-    { name: "chromium", use: { ...devices["Desktop Chrome"], channel: process.env.CI ? undefined : "msedge" } },
+    { name: "chromium", use: { ...devices["Desktop Chrome"], channel: process.env.CI ? undefined : localChannel } },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],

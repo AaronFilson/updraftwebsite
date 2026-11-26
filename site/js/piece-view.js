@@ -3,6 +3,7 @@
 // home page, a click on a card, and the back button). A shared /p/ITEM link is the piece's own page.
 import { picture } from "./photos.js";
 import { specLine, descriptionRest } from "./shop-logic.js";
+import { sharePiece } from "./share.js";
 
 /**
  * @param {{ buyControls: (item: any) => { sel: HTMLElement, row: HTMLElement, dispose: () => void }, onClose: (item: any) => void }} deps
@@ -88,23 +89,7 @@ export function createPieceView({ buyControls, onClose }) {
   });
 
   // Phones get the system share sheet; elsewhere the link is copied (and shown, in case copying is blocked).
-  $(".piece-share").addEventListener("click", async () => {
-    const url = `${location.origin}/p/${encodeURIComponent(item.id)}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: item.name, url });
-        return;
-      } catch (err) {
-        if (err.name === "AbortError") return;
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      $(".piece-shared").textContent = `Link copied: ${url}`;
-    } catch {
-      $(".piece-shared").textContent = `Link to share: ${url}`;
-    }
-  });
+  $(".piece-share").addEventListener("click", () => sharePiece(item, $(".piece-shared")));
 
   dialog.addEventListener("close", () => {
     controls?.dispose();

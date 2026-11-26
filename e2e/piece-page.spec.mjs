@@ -26,10 +26,27 @@ test("a piece's page has its name, price, product data and its own address", asy
   await expect(page.locator('link[rel="canonical"]')).toHaveAttribute("href", /\/p\/fixture-bowl$/);
   await expect(page.locator('meta[name="robots"]')).toHaveCount(0);
   await expect(page.locator(".site-header")).toBeVisible(); // in the site's own shell
-  const [product] = (await ld(page))["@graph"];
-  expect([product["@type"], product.name, product.offers[0].price]).toEqual(["Product", "Celadon footed bowl", "65.00"]);
+  const [product, crumbs] = (await ld(page))["@graph"];
+  expect([product["@type"], product.name, product.offers[0].price, product.weight.value]).toEqual([
+    "Product",
+    "Celadon footed bowl",
+    "65.00",
+    14,
+  ]);
+  await expect(page.locator(".crumbs li")).toHaveText(["Home", "Shop", "Bowls", "Celadon footed bowl"]);
+  expect(crumbs.itemListElement.map((c) => c.name)).toEqual(["Home", "Shop", "Bowls", "Celadon footed bowl"]);
   // Other pieces still for sale, each by its own page; the sold jar isn't among them.
   await expect(page.locator(".more-pieces h3")).toHaveText(["Everyday mug", "Lantern plate"]);
+});
+
+test("Share on a piece's page copies its /p/ link where there's no share sheet", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "share", { value: undefined });
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: async (t) => (window.__copied = t) } });
+  });
+  await page.goto("/p/fixture-bowl");
+  await page.getByRole("button", { name: "Share this piece" }).click();
+  await expect(page.locator(".piece-shared")).toHaveText(/^Link copied: http:\/\/localhost:\d+\/p\/fixture-bowl$/);
 });
 
 test("Add to cart on a piece's page fills the shop's cart", async ({ page }) => {
@@ -56,7 +73,7 @@ test("a piece no longer listed is gone (410), with a way to the shop", async ({ 
   await expect(page.getByRole("link", { name: "See what's in the shop" })).toBeVisible();
 });
 
-test("the pieces' sitemap lists every piece", async ({ request }) => {
+test("the pieces' sitemap lists every piece and its photos", async ({ request }) => {
   const xml = await (await request.get("/p/sitemap.xml")).text();
   expect([...xml.matchAll(/<loc>[^<]*\/p\/([^<]+)<\/loc>/g)].map((m) => m[1])).toEqual([
     "fixture-bowl",
@@ -65,14 +82,16 @@ test("the pieces' sitemap lists every piece", async ({ request }) => {
     "fixture-plate",
     "fixture-photos",
   ]);
+  expect([...xml.matchAll(/<image:loc>[^<]+<\/image:loc>/g)]).toHaveLength(2);
 });
 
 test.describe("without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
-  test("the page reads in full, and links to the shop to buy", async ({ page }) => {
+  test("the page reads in full, omits Share, and links to the shop to buy", async ({ page }) => {
     await page.goto("/p/fixture-bowl");
     await expect(page.locator("h1")).toHaveText("Celadon footed bowl");
     await expect(page.locator(".piece-buy .price")).toHaveText("$65.00");
+    await expect(page.locator(".piece-share")).toHaveCount(0);
     await expect(page.getByRole("link", { name: "Buy in the shop" })).toHaveAttribute("href", "/shop.html#p-fixture-bowl");
   });
 });

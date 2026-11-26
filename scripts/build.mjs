@@ -58,8 +58,38 @@ const NAV = [
 ];
 
 const esc = (s = "") => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const jsonForScript = (data) => JSON.stringify(data).replace(/</g, "\\u003c");
 const mb = (bytes) => (bytes / 1048576).toFixed(1) + " MB";
 const hash = (buf) => createHash("sha256").update(buf).digest("hex").slice(0, 8);
+const readData = async (file) => JSON.parse(await readFile(path.join(SRC, "data", file), "utf8"));
+const SAME_AS = ["https://www.instagram.com/aaronmakespottery/", "https://www.facebook.com/AaronFilsonCeramics/"];
+
+// Turns a gallery photo's title into a readable URL slug without cutting mid-word, so Google Images
+// sees e.g. /img/archive/01-green-footed-bowl-800-HASH.webp instead of /img/archive/01-800-HASH.webp.
+function slugify(s = "") {
+  const words = s
+    .toLowerCase()
+    .replace(/['’"]/g, "")
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+  let out = "";
+  for (const w of words) {
+    const next = out ? `${out}-${w}` : w;
+    if (next.length > 44 && out) break;
+    out = next;
+  }
+  return out;
+}
+
+async function imageSlugs() {
+  const slugs = new Map();
+  for (const file of ["work.json", "archive.json", "artist.json", "kiln-shed.json", "soda-kiln.json"]) {
+    for (const e of await readData(file)) {
+      if (e.image && e.title && !slugs.has(e.image)) slugs.set(e.image, slugify(e.title));
+    }
+  }
+  return slugs;
+}
 
 // Writes buf into dist/<dir>/<name>-<hash><ext> and returns the site-relative URL.
 async function emit(dir, name, ext, buf) {
@@ -80,7 +110,7 @@ const ENCODE = {
 // encoder settings, sharp/libvips versions), not by file times: a cache restored in CI (where every
 // checkout looks new) is reused, and changing a quality setting re-encodes. Unused entries are pruned.
 const ENGINE = `sharp ${sharp.versions.sharp} vips ${sharp.versions.vips}`;
-async function images() {
+async function images(slugs) {
   const meta = {};
   const used = new Set();
   await mkdir(CACHE, { recursive: true });
@@ -89,7 +119,10 @@ async function images() {
     for (const file of (await readdir(srcDir)).filter((f) => /\.jpe?g$/i.test(f))) {
       const master = await readFile(path.join(srcDir, file));
       const masterHash = createHash("sha256").update(master).digest("hex");
+      const rel = `images/${dir}/${file}`;
       const base = path.parse(file).name;
+      const slug = slugs.get(rel);
+      const stem = slug ? `${base}-${slug}` : base;
       const { width, height } = await sharp(master).metadata();
       const entry = { width, height, webp: {}, avif: {} };
       for (const w of WIDTHS.filter((w) => w <= width || w === WIDTHS[0])) {
@@ -106,16 +139,16 @@ async function images() {
             buf = await sharp(master).resize({ width: w, withoutEnlargement: true })[fmt](ENCODE[fmt](w)).toBuffer();
             await writeFile(cached, buf);
           }
-          entry[fmt][w] = await emit(`img/${dir}`, `${base}-${w}`, `.${fmt}`, buf);
+          entry[fmt][w] = await emit(`img/${dir}`, `${stem}-${w}`, `.${fmt}`, buf);
         }
       }
       try {
         const buf = await readFile(path.join(SRC, "images-full", dir, file));
-        entry.full = { url: await emit(`full/${dir}`, base, path.extname(file), buf), size: buf.length };
+        entry.full = { url: await emit(`full/${dir}`, stem, path.extname(file), buf), size: buf.length };
       } catch {
         /* no full-size version for this image */
       }
-      meta[`images/${dir}/${file}`] = entry;
+      meta[rel] = entry;
     }
   }
   // Drop encodes no photo uses any more (and the old per-folder layout), so the cache doesn't grow forever.
@@ -207,10 +240,36 @@ function photo(meta, image, alt, { sizes, only = [400, 800] }) {
 <img src="${m.webp[ws[0]]}" srcset="${set("webp")}" sizes="${sizes}" width="${m.width}" height="${m.height}" alt="${esc(alt)}" loading="lazy" decoding="async"></picture>`;
 }
 
-async function ogImage() {
-  const src = path.join(SRC, "images", "work", "08.jpg");
-  const buf = await sharp(src).resize(1200, 630, { fit: "cover" }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
-  return emit("img", "og", ".jpg", buf);
+async function makeOg(name, rel) {
+  const buf = await sharp(path.join(SRC, rel)).resize(1200, 630, { fit: "cover" }).jpeg({ quality: 78, mozjpeg: true }).toBuffer();
+  return emit("img", name, ".jpg", buf);
+}
+
+async function ogImages() {
+  const [home, archive, about, kilns] = await Promise.all([
+    makeOg("og", "images/work/08.jpg"),
+    makeOg("og-archive", "images/archive/04.jpg"),
+    makeOg("og-about", "images/artist/08.jpg"),
+    makeOg("og-kilns", "images/soda-kiln/01.jpg"),
+  ]);
+  return {
+    default: {
+      url: home,
+      alt: "Handmade stoneware and porcelain bowls, vases, plates and cups from Updraft Pottery Studio",
+    },
+    "past-work.html": {
+      url: archive,
+      alt: "Handmade green footed bowl beside a wide rust-red stoneware bowl by Aaron Filson",
+    },
+    "about.html": {
+      url: about,
+      alt: "Potter Aaron Filson on a Puget Sound beach at low tide",
+    },
+    "kilns.html": {
+      url: kilns,
+      alt: "Salt and soda kiln loaded with pottery behind its brick arch",
+    },
+  };
 }
 
 // Square PNG icons (Apple touch icon, manifest) from the SVG favicon on an opaque, padded background.
@@ -242,7 +301,7 @@ async function icons() {
       ],
     }),
   );
-  return { apple };
+  return { apple, icon512: i512 };
 }
 
 async function bundle() {
@@ -293,9 +352,231 @@ function nav(current) {
 
 const SHELL = "piece-shell.html";
 const pageUrl = (name) => SITE_URL + (name === "index.html" ? "/" : `/${name}`);
+const largestWebp = (m) => m.webp[Math.max(...Object.keys(m.webp).map(Number))];
+
+// Breadcrumb trails for every subpage (visual HTML + matching BreadcrumbList JSON-LD).
+/** @type {Record<string, [string, string?][]>} */
+const CRUMBS = {
+  "shop.html": [["Home", "/"], ["Shop"]],
+  "past-work.html": [["Home", "/"], ["Past work"]],
+  "about.html": [["Home", "/"], ["About the studio"]],
+  "kilns.html": [["Home", "/"], ["Kiln projects"]],
+  "terms.html": [["Home", "/"], ["Ceramic terms"]],
+  "care.html": [["Home", "/"], ["Shop", "/shop.html"], ["Care & use"]],
+  "policies.html": [["Home", "/"], ["Shop", "/shop.html"], ["Shipping, pickup & returns"]],
+};
+
+function crumbsHtml(name) {
+  const trail = CRUMBS[name];
+  if (!trail) return "";
+  const li = trail.map(([label, href]) =>
+    href ? `<li><a href="${href}">${esc(label)}</a></li>` : `<li><span aria-current="page">${esc(label)}</span></li>`,
+  );
+  return `<nav class="crumbs" aria-label="Breadcrumb"><ol>${li.join("")}</ol></nav>`;
+}
+
+function crumbsSchema(name) {
+  const trail = CRUMBS[name];
+  if (!trail) return null;
+  return {
+    "@type": "BreadcrumbList",
+    "@id": `${pageUrl(name)}#breadcrumb`,
+    itemListElement: trail.map(([label, href], i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      name: label,
+      ...(href ? { item: SITE_URL + href } : {}),
+    })),
+  };
+}
+
+// Renders the ceramic glossary (site/data/terms.json) into both HTML (<dl>) and DefinedTermSet JSON-LD,
+// so definitions live in one place with no HTML tag stripping.
+function termsHtml(terms) {
+  const items = terms.map((t) => {
+    const more = t.link ? ` ${esc(t.link.before)}<a href="${esc(t.link.href)}">${esc(t.link.text)}</a>${esc(t.link.after)}` : "";
+    return `<dt id="${esc(t.id)}">${esc(t.term)}</dt><dd>${esc(t.definition)}${more}</dd>`;
+  });
+  return `<dl class="terms">${items.join("\n")}</dl>`;
+}
+
+function termsSchema(terms, url) {
+  return terms.map((t) => ({
+    "@type": "DefinedTerm",
+    "@id": `${url}#${t.id}`,
+    url: `${url}#${t.id}`,
+    name: t.term,
+    description: t.link ? `${t.definition} ${t.link.before}${t.link.text}${t.link.after}` : t.definition,
+    inDefinedTermSet: url,
+  }));
+}
+
+// Structured data (@graph) per static page. Piece pages get Product + BreadcrumbList from backend/src/piece-page.mjs.
+function pageSchema(name, html, { ogs, icon512, email, meta, archive, terms }) {
+  if (name === SHELL || name === "error.html" || /<meta name="robots" content="noindex"/.test(html)) return null;
+  const url = pageUrl(name);
+  const storeId = `${SITE_URL}/#store`;
+  const websiteId = `${SITE_URL}/#website`;
+  const personId = `${SITE_URL}/about.html#aaron`;
+  const title = (html.match(/<title>(.*?)<\/title>/)?.[1] ?? SITE_NAME).replaceAll("&amp;", "&");
+  const desc = (html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "").replaceAll("&amp;", "&");
+
+  if (name === "index.html") {
+    return {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "OnlineStore",
+          "@id": storeId,
+          name: SITE_NAME,
+          description: desc,
+          url: `${SITE_URL}/`,
+          logo: SITE_URL + icon512,
+          image: SITE_URL + ogs.default.url,
+          ...(email ? { email } : {}),
+          founder: { "@type": "Person", "@id": personId, name: "Aaron Filson", url: pageUrl("about.html") },
+          address: { "@type": "PostalAddress", addressLocality: "Tacoma", addressRegion: "WA", addressCountry: "US" },
+          areaServed: { "@type": "Country", name: "US" },
+          sameAs: SAME_AS,
+          hasMerchantReturnPolicy: {
+            "@type": "MerchantReturnPolicy",
+            "@id": `${SITE_URL}/policies.html#returns`,
+            applicableCountry: "US",
+            returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
+          },
+        },
+        {
+          "@type": "WebSite",
+          "@id": websiteId,
+          name: SITE_NAME,
+          url: `${SITE_URL}/`,
+          publisher: { "@id": storeId },
+        },
+      ],
+    };
+  }
+
+  let primary;
+  if (name === "about.html") {
+    primary = {
+      "@type": "ProfilePage",
+      "@id": `${url}#webpage`,
+      url,
+      name: title,
+      description: desc,
+      isPartOf: { "@id": websiteId },
+      mainEntity: {
+        "@type": "Person",
+        "@id": personId,
+        name: "Aaron Filson",
+        jobTitle: "Potter and Ceramic Artist",
+        description: "Tacoma potter making wheel-thrown porcelain, stoneware, and soda-fired ceramics at Updraft Pottery Studio.",
+        url,
+        image: SITE_URL + meta["images/artist/08.jpg"].webp[800],
+        homeLocation: { "@type": "Place", name: "Tacoma, WA" },
+        worksFor: { "@type": "OnlineStore", "@id": storeId, name: SITE_NAME },
+        alumniOf: [
+          { "@type": "CollegeOrUniversity", name: "University of Puget Sound" },
+          { "@type": "CollegeOrUniversity", name: "Green River College" },
+        ],
+        sameAs: SAME_AS,
+      },
+    };
+  } else if (name === "past-work.html") {
+    primary = {
+      "@type": "CollectionPage",
+      "@id": `${url}#webpage`,
+      url,
+      name: title,
+      description: desc,
+      isPartOf: { "@id": websiteId },
+      creator: { "@id": personId },
+      mainEntity: {
+        "@type": "ItemList",
+        numberOfItems: archive.length,
+        itemListElement: archive.map((e, i) => ({
+          "@type": "ListItem",
+          position: i + 1,
+          item: {
+            "@type": "VisualArtwork",
+            name: e.title,
+            ...(e.description ? { description: e.description } : {}),
+            artform: "Pottery",
+            image: SITE_URL + largestWebp(meta[e.image]),
+            creator: { "@type": "Person", "@id": personId, name: "Aaron Filson" },
+          },
+        })),
+      },
+    };
+  } else if (name === "kilns.html") {
+    primary = {
+      "@type": "CollectionPage",
+      "@id": `${url}#webpage`,
+      url,
+      name: title,
+      description: desc,
+      isPartOf: { "@id": websiteId },
+      hasPart: [
+        {
+          "@type": "Article",
+          "@id": `${url}#kiln-shed`,
+          url: `${url}#kiln-shed`,
+          headline: "The updraft kiln shed",
+          description: "Housing the propane updraft kiln at Updraft Pottery Studio in Tacoma, Washington.",
+          image: SITE_URL + largestWebp(meta["images/kiln-shed/01.jpg"]),
+          author: { "@type": "Person", "@id": personId, name: "Aaron Filson" },
+          publisher: { "@type": "OnlineStore", "@id": storeId, name: SITE_NAME },
+        },
+        {
+          "@type": "Article",
+          "@id": `${url}#soda-kiln`,
+          url: `${url}#soda-kiln`,
+          headline: "The soda kiln",
+          description: "Building and firing a salt and soda kiln at Elinor Maroney's studio in Covington, Washington.",
+          image: SITE_URL + largestWebp(meta["images/soda-kiln/01.jpg"]),
+          author: { "@type": "Person", "@id": personId, name: "Aaron Filson" },
+          publisher: { "@type": "OnlineStore", "@id": storeId, name: SITE_NAME },
+        },
+      ],
+    };
+  } else if (name === "terms.html") {
+    primary = {
+      "@type": "DefinedTermSet",
+      "@id": `${url}#glossary`,
+      url,
+      name: "Pottery and Ceramic Glaze Glossary",
+      description: desc,
+      isPartOf: { "@id": websiteId },
+      hasDefinedTerm: termsSchema(terms, url),
+    };
+  } else if (name === "shop.html") {
+    primary = {
+      "@type": "CollectionPage",
+      "@id": `${url}#webpage`,
+      url,
+      name: title,
+      description: desc,
+      isPartOf: { "@id": websiteId },
+      about: { "@id": storeId },
+    };
+  } else {
+    primary = {
+      "@type": "WebPage",
+      "@id": `${url}#webpage`,
+      url,
+      name: title,
+      description: desc,
+      isPartOf: { "@id": websiteId },
+    };
+  }
+  const crumbs = crumbsSchema(name);
+  return { "@context": "https://schema.org", "@graph": crumbs ? [primary, crumbs] : [primary] };
+}
 
 // Head tags shared by every page; title and description are read from the page itself.
-function headMeta(name, html, { og, apple }) {
+function headMeta(name, html, shared) {
+  const { ogs, apple } = shared;
+  const og = ogs[name] ?? ogs.default;
   const title = html.match(/<title>(.*?)<\/title>/)?.[1] ?? SITE_NAME;
   const desc = html.match(/<meta name="description" content="([^"]*)"/)?.[1];
   const tags = [
@@ -315,18 +596,22 @@ function headMeta(name, html, { og, apple }) {
       `<meta property="og:title" content="${title}">`,
       ...(desc ? [`<meta property="og:description" content="${desc}">`] : []),
       `<meta property="og:url" content="${pageUrl(name)}">`,
-      `<meta property="og:image" content="${SITE_URL}${og}">`,
+      `<meta property="og:image" content="${SITE_URL}${og.url}">`,
       `<meta property="og:image:width" content="1200">`,
       `<meta property="og:image:height" content="630">`,
+      `<meta property="og:image:alt" content="${esc(og.alt)}">`,
       `<meta name="twitter:card" content="summary_large_image">`,
     );
   }
+  const schema = pageSchema(name, html, shared);
+  if (schema) tags.push(`<script type="application/ld+json">${jsonForScript(schema)}</script>`);
   return tags.map((t) => "  " + t).join("\n");
 }
 
 async function page(name, replacements, shared) {
   let html = await readFile(path.join(SRC, name), "utf8");
   html = html.replace("<!--meta-->", headMeta(name, html, shared));
+  html = html.replace("<!--crumbs-->", crumbsHtml(name));
   for (const [k, v] of Object.entries(replacements)) html = html.replaceAll(k, v);
   const leftover = html.match(/\{\{\w+\}\}|<!--\w+-->/);
   if (leftover) throw new Error(`${name}: unreplaced placeholder ${leftover[0]}`);
@@ -354,9 +639,18 @@ async function page(name, replacements, shared) {
 await rm(OUT, { recursive: true, force: true });
 await mkdir(OUT, { recursive: true });
 
-const meta = await images();
-const og = await ogImage();
-const { apple } = await icons();
+const [slugs, workData, archiveData, artistData, kilnShedData, sodaKilnData, termsData] = await Promise.all([
+  imageSlugs(),
+  readData("work.json"),
+  readData("archive.json"),
+  readData("artist.json"),
+  readData("kiln-shed.json"),
+  readData("soda-kiln.json"),
+  readData("terms.json"),
+]);
+const meta = await images(slugs);
+const ogs = await ogImages();
+const { apple, icon512 } = await icons();
 const assets = await bundle();
 const css = await readFile(path.join(OUT, assets.style), "utf8");
 await rm(path.join(OUT, assets.style)); // inlined into every page instead
@@ -386,7 +680,7 @@ function renderBanner(b, now = Date.now()) {
 
 // Site-wide settings. The policy page (and links to it) is only built once a contact email is set,
 // so a half-finished page can't be published.
-const siteData = JSON.parse(await readFile(path.join(SRC, "data", "site.json"), "utf8"));
+const siteData = await readData("site.json");
 const email = siteData.contactEmail?.trim() ?? "";
 if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`site.json contactEmail looks wrong: ${email}`);
 const mailto = email ? `<a href="mailto:${esc(email)}">${esc(email)}</a>` : "";
@@ -400,7 +694,7 @@ const common = (current, js = assets.site) => ({
   "{{css}}": `<link rel="preload" href="/${assets.font}" as="font" type="font/woff2" crossorigin><style>${css}</style>`,
   "{{js}}": "/" + js,
   "{{year}}": String(new Date().getFullYear()),
-  "{{og}}": SITE_URL + og,
+  "{{og}}": SITE_URL + ogs.default.url,
   "{{root}}": SITE_URL + "/",
   "{{policiesItem}}": email ? '<li><a href="/policies.html">Shipping &amp; returns</a></li>' : "",
   "{{contactLine}}": email ? `<br>${mailto}` : "",
@@ -409,7 +703,7 @@ const common = (current, js = assets.site) => ({
   "{{contactEmail}}": esc(email),
   "{{signup}}": signup, // in the footer; the home page places it mid-page instead
 });
-const shared = { og, apple };
+const shared = { ogs, apple, icon512, email, meta, archive: archiveData, terms: termsData };
 
 const sizes = {
   "index.html": await page(
@@ -455,12 +749,28 @@ const sizes = {
     },
     shared,
   ),
-  "terms.html": await page("terms.html", common("/terms.html"), shared),
+  "terms.html": await page("terms.html", { ...common("/terms.html"), "<!--terms-->": termsHtml(termsData) }, shared),
   "care.html": await page("care.html", common("/care.html"), shared),
   ...(email ? { "policies.html": await page("policies.html", common("/policies.html"), shared) } : {}),
   "shop.html": await page("shop.html", common("/shop.html", assets.shop), shared),
   "error.html": await page("error.html", common(""), shared),
   [SHELL]: await page(SHELL, common(""), shared),
+};
+
+// High-res image URLs per static page for sitemap-pages.xml, so Google Images discovers the 1600px
+// gallery photos that otherwise sit behind lightbox links (<a href>) rather than <img src>.
+const heroWebp = (img) => meta[img].webp[HERO_WIDTHS.find((w) => meta[img].webp[w]) ?? 400];
+const pageImages = {
+  "index.html": [
+    ...new Set([
+      ...workData.map((e) => largestWebp(meta[e.image])),
+      ...artistData.map((e) => heroWebp(e.image)),
+      meta["images/soda-kiln/01.jpg"].webp[800] ?? largestWebp(meta["images/soda-kiln/01.jpg"]),
+    ]),
+  ],
+  "about.html": artistData.map((e) => heroWebp(e.image)),
+  "past-work.html": archiveData.map((e) => largestWebp(meta[e.image])),
+  "kilns.html": [...kilnShedData, ...sodaKilnData].map((e) => largestWebp(meta[e.image])),
 };
 
 const indexable = Object.keys(sizes).filter((n) => n !== "error.html" && n !== SHELL);
@@ -470,14 +780,18 @@ await writeFile(
     ? `User-agent: *\nAllow: /\nDisallow: /${SHELL}\n${SITE_URL ? `Sitemap: ${SITE_URL}/sitemap.xml\n` : ""}`
     : "User-agent: *\nDisallow: /\n",
 ); // staging stays out of search results
-// sitemap.xml names two: this build's pages, and every piece's page, which the API lists from Square
-// (/p/sitemap.xml, backend/src/piece.mjs), so a piece listed between publishes is found too.
+// sitemap.xml names two: this build's pages (with their high-res gallery photos), and every piece's
+// page, which the API lists from Square (/p/sitemap.xml, backend/src/piece.mjs).
 if (SITE_URL && INDEXABLE) {
+  const urlEntries = indexable.map((n) => {
+    const imgs = (pageImages[n] ?? []).map((u) => `\n    <image:image><image:loc>${esc(SITE_URL + u)}</image:loc></image:image>`).join("");
+    return imgs ? `  <url>\n    <loc>${esc(pageUrl(n))}</loc>${imgs}\n  </url>` : `  <url><loc>${esc(pageUrl(n))}</loc></url>`;
+  });
   await writeFile(
     path.join(OUT, "sitemap-pages.xml"),
     `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${indexable.map((n) => `  <url><loc>${pageUrl(n)}</loc></url>`).join("\n")}
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">
+${urlEntries.join("\n")}
 </urlset>
 `,
   );

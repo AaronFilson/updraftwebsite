@@ -47,29 +47,33 @@ export async function loadCatalog() {
   const items = objects
     .filter((o) => o.type === "ITEM" && !o.isDeleted && o.itemData?.productType !== "APPOINTMENTS_SERVICE")
     .filter((o) => !o.itemData.isArchived)
-    .map((o) => ({
-      id: o.id,
-      name: o.itemData.name,
-      description: o.itemData.descriptionPlaintext ?? o.itemData.description ?? "",
-      image: images.get(o.itemData.imageIds?.[0]) ?? null,
-      images: (o.itemData.imageIds ?? []).map((id) => images.get(id)).filter(Boolean), // in the order set in Square
-      category: categoryOf(o.itemData),
-      updatedAt: o.updatedAt ?? null, // the pieces' sitemap (piece-page.mjs)
-      variations: (o.itemData.variations ?? [])
-        .filter((v) => v.itemVariationData?.priceMoney)
-        .map((v) => {
-          const d = v.itemVariationData;
-          const here = d.locationOverrides?.find((x) => x.locationId === SQUARE_LOCATION_ID);
-          const name = o.itemData.variations.length > 1 ? `${o.itemData.name} (${d.name})` : o.itemData.name;
-          info.set(v.id, {
-            name,
-            tracked: Boolean(here?.trackInventory ?? d.trackInventory),
-            soldOut: Boolean(here?.soldOut),
-            shipLb: shipLbOf(o),
-          });
-          return { id: v.id, name: d.name, price: Number(d.priceMoney.amount), currency: d.priceMoney.currency };
-        }),
-    }))
+    .map((o) => {
+      const shipLb = shipLbOf(o);
+      return {
+        id: o.id,
+        name: o.itemData.name,
+        description: o.itemData.descriptionPlaintext ?? o.itemData.description ?? "",
+        image: images.get(o.itemData.imageIds?.[0]) ?? null,
+        images: (o.itemData.imageIds ?? []).map((id) => images.get(id)).filter(Boolean), // in the order set in Square
+        category: categoryOf(o.itemData),
+        ...(shipLb ? { shipLb } : {}),
+        updatedAt: o.updatedAt ?? null, // the pieces' sitemap (piece-page.mjs)
+        variations: (o.itemData.variations ?? [])
+          .filter((v) => v.itemVariationData?.priceMoney)
+          .map((v) => {
+            const d = v.itemVariationData;
+            const here = d.locationOverrides?.find((x) => x.locationId === SQUARE_LOCATION_ID);
+            const name = o.itemData.variations.length > 1 ? `${o.itemData.name} (${d.name})` : o.itemData.name;
+            info.set(v.id, {
+              name,
+              tracked: Boolean(here?.trackInventory ?? d.trackInventory),
+              soldOut: Boolean(here?.soldOut),
+              shipLb,
+            });
+            return { id: v.id, name: d.name, price: Number(d.priceMoney.amount), currency: d.priceMoney.currency };
+          }),
+      };
+    })
     .filter((i) => i.variations.length);
 
   const counts = await liveStock([...info].filter(([, v]) => v.tracked).map(([id]) => id));

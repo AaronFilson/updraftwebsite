@@ -5,7 +5,7 @@ import { handler, _setSquare } from "../src/handler.mjs";
 import sharp from "sharp";
 import { parseRequest, handler as images, _resetCatalog, _catalogWaits } from "../src/images.mjs";
 import { _resetShell } from "../src/piece.mjs";
-import { renderPiece, structuredData } from "../src/piece-page.mjs";
+import { renderPiece, structuredData, pieceTitle } from "../src/piece-page.mjs";
 
 const SQUARE_PHOTO = "https://items-images-sandbox.s3.us-west-2.amazonaws.com/files/abc/original.jpeg";
 
@@ -116,7 +116,7 @@ const iter = (arr) => ({
     yield* arr;
   },
 });
-function fakeCatalog({ name = "Celadon bowl", description = "Cone 10 porcelain · celadon\nThrown in Tacoma." } = {}) {
+function fakeCatalog({ name = "Celadon bowl", description = "Cone 10 porcelain · celadon\nThrown in Tacoma.", shipLb = 14 } = {}) {
   return {
     catalog: {
       list: async () =>
@@ -128,6 +128,7 @@ function fakeCatalog({ name = "Celadon bowl", description = "Cone 10 porcelain �
             type: "ITEM",
             id: "I1",
             updatedAt: "2026-10-15T18:04:00.000Z",
+            ...(shipLb ? { customAttributeValues: { ship_lb: { key: "ship_lb", numberValue: String(shipLb) } } } : {}),
             itemData: {
               name,
               description,
@@ -145,12 +146,13 @@ function fakeCatalog({ name = "Celadon bowl", description = "Cone 10 porcelain �
 }
 const get = (path) => handler({ requestContext: { http: { method: "GET" } }, rawPath: path });
 
-test("the catalog lists every photo, in order, and the piece's type", async () => {
+test("the catalog lists every photo, in order, the piece's type and its shipping weight", async () => {
   _setSquare(fakeCatalog());
   const { items } = JSON.parse((await get("/api/catalog")).body);
   assert.equal(items[0].image, SQUARE_PHOTO);
   assert.deepEqual(items[0].images, [SQUARE_PHOTO, SQUARE_PHOTO.replace("abc", "def")]);
   assert.equal(items[0].category, "Bowls");
+  assert.equal(items[0].shipLb, 14);
 });
 
 // The JSON-LD block of a page.
@@ -166,28 +168,47 @@ test("a piece's page has its name, price, photos, words and product data, and no
   assert.match(res.body, /<p>Thrown in Tacoma\.<\/p>/);
   assert.match(res.body, /<p class="price">\$65\.00<\/p>/);
   assert.match(res.body, /<a class="btn" href="\/shop\.html#p-I1">Buy in the shop<\/a>/, "works without the script");
+  assert.match(res.body, /alt="Celadon bowl — Cone 10 porcelain · celadon"/);
   assert.match(res.body, /alt="Celadon bowl, photo 2"/);
   assert.match(res.body, /<meta property="og:title" content="Celadon bowl · \$65\.00">/);
   assert.match(res.body, /<meta property="og:description" content="Cone 10 porcelain · celadon">/);
+  assert.match(res.body, /<meta property="og:image:alt" content="Celadon bowl — Cone 10 porcelain · celadon">/);
   assert.match(
     res.body,
     /<meta name="description" content="Cone 10 porcelain · celadon\. Handmade in Tacoma by Updraft Pottery Studio\.">/,
   );
   assert.match(res.body, /<meta property="product:price:amount" content="65\.00">/);
   assert.match(res.body, /<link rel="canonical" href="\/p\/I1">/);
-  assert.match(res.body, /<a href="\/shop\.html\?type=Bowls">Bowls<\/a>/, "breadcrumbs");
+  assert.match(
+    res.body,
+    /<li><a href="\/">Home<\/a><\/li><li><a href="\/shop\.html">Shop<\/a><\/li><li><a href="\/shop\.html\?type=Bowls">Bowls<\/a><\/li>/,
+    "breadcrumbs",
+  );
   assert.ok(!res.body.includes("p.js"), "no redirect to the shop any more");
   const [product, crumbs] = ld(res.body)["@graph"];
   assert.equal(product["@type"], "Product");
+  assert.equal(product.material, "Porcelain");
+  assert.equal(product.countryOfOrigin, "US");
+  assert.deepEqual(product.weight, { "@type": "QuantitativeValue", value: 14, unitCode: "LBR" });
   assert.equal(product.offers[0].price, "65.00");
   assert.equal(product.offers[0].availability, "https://schema.org/InStock");
+  assert.deepEqual(product.offers[0].availableDeliveryMethod, ["https://schema.org/OnSitePickup", "https://schema.org/ParcelService"]);
   assert.equal(product.image.length, 2);
   assert.deepEqual(
     crumbs.itemListElement.map((c) => c.name),
-    ["Shop", "Bowls", "Celadon bowl"],
+    ["Home", "Shop", "Bowls", "Celadon bowl"],
   );
+  assert.equal(crumbs.itemListElement.at(-1).item, undefined, "current page crumb omits item URL");
   const data = JSON.parse(res.body.match(/<script type="application\/json" id="piece-data">(.*?)<\/script>/)[1]);
   assert.deepEqual(data.variations, [{ id: "V1", name: "R", price: 6500, currency: "USD", stock: 1 }]);
+});
+
+test("piece titles include 'Handmade pottery' when short enough, and stay within 60 characters", () => {
+  assert.equal(pieceTitle({ name: "Lantern bowl" }), "Lantern bowl – Handmade pottery | Updraft Pottery Studio");
+  assert.equal(pieceTitle({ name: "Celadon footed bowl" }), "Celadon footed bowl | Updraft Pottery Studio");
+  assert.equal(pieceTitle({ name: "Ceramic vessel" }), "Ceramic vessel | Updraft Pottery Studio");
+  assert.ok(pieceTitle({ name: "Lantern bowl" }).length <= 60);
+  assert.ok(pieceTitle({ name: "Celadon footed bowl" }).length <= 60);
 });
 
 test("a piece's page goes into the site's shell; without one it's a plain page kept out of search", async (t) => {
@@ -202,7 +223,7 @@ test("a piece's page goes into the site's shell; without one it's a plain page k
     shell: SHELL,
     site: "https://s.example",
   });
-  assert.match(html, /<title>Bowl \| Updraft Pottery Studio<\/title>/);
+  assert.match(html, /<title>Bowl – Handmade pottery \| Updraft Pottery Studio<\/title>/);
   assert.match(html, /<link rel="canonical" href="https:\/\/s\.example\/p\/I1">.*<\/head>/);
   assert.match(html, /<main id="main"><div class="wrap piece-page">/);
   assert.match(html, /<a href="\/policies\.html">Shipping, pickup &amp; returns<\/a>/, "the shell's menu has the policy page");
@@ -248,10 +269,12 @@ test("unknown or odd ids are gone (410), never an error", async () => {
   assert.equal((await get("/p/%E0")).statusCode, 410, "a malformed escape is not an unhandled error");
 });
 
-test("the pieces' sitemap lists every listed piece with the day it last changed", async () => {
+test("the pieces' sitemap lists every listed piece with the day it last changed and its photos", async () => {
   _setSquare(fakeCatalog());
   const res = await get("/p/sitemap.xml");
   assert.equal(res.statusCode, 200);
   assert.match(res.headers["content-type"], /application\/xml/);
-  assert.match(res.body, /<url><loc>\/p\/I1<\/loc><lastmod>2026-10-15<\/lastmod><\/url>/);
+  assert.match(res.body, /xmlns:image="http:\/\/www\.google\.com\/schemas\/sitemap-image\/1\.1"/);
+  assert.match(res.body, /<url><loc>\/p\/I1<\/loc><lastmod>2026-10-15<\/lastmod><image:image><image:loc>\/api\/img\?u=/);
+  assert.equal([...res.body.matchAll(/<image:loc>/g)].length, 2);
 });

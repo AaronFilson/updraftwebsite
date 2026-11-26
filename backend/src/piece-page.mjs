@@ -45,6 +45,29 @@ export function metaDescription(item) {
   return spec ? `${spec}. Handmade in Tacoma by ${SITE_NAME}.` : `Handmade in Tacoma by ${SITE_NAME}.`;
 }
 
+/** Page <title>, adding "Handmade pottery" when the piece name has room (<= 60 characters). */
+export function pieceTitle(item) {
+  const name = String(item.name ?? "").trim();
+  if (!/pottery|ceramic/i.test(name)) {
+    const rich = `${name} – Handmade pottery | ${SITE_NAME}`;
+    if (rich.length <= 60) return rich;
+  }
+  return `${name} | ${SITE_NAME}`;
+}
+
+function materialOf(item) {
+  const text = `${item.name ?? ""} ${item.description ?? ""}`;
+  if (/porcelain/i.test(text) && /stoneware/i.test(text)) return "Porcelain and stoneware";
+  if (/porcelain/i.test(text)) return "Porcelain";
+  if (/stoneware/i.test(text)) return "Stoneware";
+  return "Ceramic";
+}
+
+function photoAlt(item, i) {
+  const spec = specLine(item.description);
+  return i === 0 && spec ? `${item.name} — ${spec}` : `${item.name}, photo ${i + 1}`;
+}
+
 function picture(url, { alt, sizes, widths, eager }) {
   const set = (f) => widths.map((w) => `${sized(url, w, f)} ${w}w`).join(", ");
   // data-original: Square's full-size photo, which piece-page.js shows if the resized one can't load.
@@ -59,10 +82,13 @@ function picture(url, { alt, sizes, widths, eager }) {
 export function structuredData(item, site) {
   const url = `${site}/p/${item.id}`;
   const many = item.variations.length > 1;
+  const delivery =
+    item.shipLb > 0 ? ["https://schema.org/OnSitePickup", "https://schema.org/ParcelService"] : ["https://schema.org/OnSitePickup"];
   const crumbs = [
+    { name: "Home", item: `${site}/` },
     { name: "Shop", item: `${site}/shop.html` },
     ...(item.category ? [{ name: item.category, item: `${site}/shop.html?type=${encodeURIComponent(item.category)}` }] : []),
-    { name: item.name, item: url },
+    { name: item.name },
   ];
   return {
     "@context": "https://schema.org",
@@ -76,6 +102,10 @@ export function structuredData(item, site) {
         sku: item.id,
         image: photosOf(item).map((p) => site + sized(p, 1200, "jpeg")),
         ...(item.category ? { category: item.category } : {}),
+        material: materialOf(item),
+        countryOfOrigin: "US",
+        ...(item.shipLb > 0 ? { weight: { "@type": "QuantitativeValue", value: item.shipLb, unitCode: "LBR" } } : {}),
+        creator: { "@type": "Person", "@id": `${site}/about.html#aaron`, name: "Aaron Filson" },
         brand: { "@type": "Brand", name: SITE_NAME },
         offers: item.variations.map((v) => ({
           "@type": "Offer",
@@ -85,7 +115,8 @@ export function structuredData(item, site) {
           priceCurrency: v.currency ?? "USD",
           availability: isOpen(v) ? "https://schema.org/InStock" : "https://schema.org/SoldOut",
           itemCondition: "https://schema.org/NewCondition",
-          seller: { "@type": "Organization", name: SITE_NAME, url: `${site}/` },
+          availableDeliveryMethod: delivery,
+          seller: { "@type": "OnlineStore", "@id": `${site}/#store`, name: SITE_NAME, url: `${site}/` },
           // policies.html: returns are not accepted (a piece broken in shipping is refunded).
           hasMerchantReturnPolicy: {
             "@type": "MerchantReturnPolicy",
@@ -96,6 +127,7 @@ export function structuredData(item, site) {
       },
       {
         "@type": "BreadcrumbList",
+        "@id": `${url}#breadcrumb`,
         itemListElement: crumbs.map((c, n) => ({ "@type": "ListItem", position: n + 1, ...c })),
       },
     ],
@@ -115,6 +147,7 @@ function headTags(item, site) {
     `<meta property="og:description" content="${esc(specLine(item.description) || metaDescription(item))}">`,
     `<meta property="og:url" content="${esc(url)}">`,
     `<meta property="og:image" content="${esc(photo ? site + sized(photo, 1200, "jpeg") : `${site}/favicon.svg`)}">`,
+    `<meta property="og:image:alt" content="${esc(photoAlt(item, 0))}">`,
     // Read by Facebook and Pinterest for the price on a shared piece.
     ...(open.length
       ? [
@@ -147,7 +180,7 @@ function body(item, items, { policies }) {
     ? photos
         .map((p, i) =>
           picture(p, {
-            alt: `${item.name}, photo ${i + 1}`,
+            alt: photoAlt(item, i),
             sizes: i ? "(min-width: 900px) 270px, 50vw" : "(min-width: 900px) 560px, 100vw",
             widths: [800, 1600], // the sizes scripts/warm-photos.mjs makes for every photo
             eager: i === 0,
@@ -164,7 +197,7 @@ function body(item, items, { policies }) {
   };
   return (
     `<div class="wrap piece-page">` +
-    `<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="/shop.html">Shop</a></li>` +
+    `<nav class="crumbs" aria-label="Breadcrumb"><ol><li><a href="/">Home</a></li><li><a href="/shop.html">Shop</a></li>` +
     (item.category ? `<li><a href="/shop.html?type=${esc(encodeURIComponent(item.category))}">${esc(item.category)}</a></li>` : "") +
     `<li><span aria-current="page">${esc(item.name)}</span></li></ol></nav>` +
     `<div class="piece-layout"><div class="piece-gallery${sold ? " is-sold" : ""}">${gallery}</div>` +
@@ -196,7 +229,7 @@ function body(item, items, { policies }) {
  *   site: the address pages are linked from, e.g. https://updraftpotterystudio.com ("" when unknown)
  */
 export function renderPiece({ item, items, shell, site }) {
-  const title = `${esc(item.name)} | ${SITE_NAME}`;
+  const title = esc(pieceTitle(item));
   if (shell?.includes("[[piece]]"))
     return shell
       .replace(/<title>[^<]*<\/title>/, () => `<title>${title}</title>`)
@@ -215,10 +248,19 @@ export const gonePage = () =>
   `<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"></head><body>` +
   `<p>That piece isn't listed any more. <a href="/shop.html">See what's in the shop</a>.</p></body></html>`;
 
-/** Every listed piece, sold ones too: their pages stay up. */
+/** Every listed piece (sold ones too: their pages stay up), with its 1200px photos for image search. */
 export function piecesSitemap(items, site) {
-  const urls = items.map(
-    (i) => `  <url><loc>${esc(`${site}/p/${i.id}`)}</loc>${i.updatedAt ? `<lastmod>${esc(i.updatedAt.slice(0, 10))}</lastmod>` : ""}</url>`,
+  const urls = items.map((i) => {
+    const loc = `<loc>${esc(`${site}/p/${i.id}`)}</loc>`;
+    const lastmod = i.updatedAt ? `<lastmod>${esc(i.updatedAt.slice(0, 10))}</lastmod>` : "";
+    const imgs = photosOf(i)
+      .map((p) => `<image:image><image:loc>${esc(site + sized(p, 1200, "jpeg"))}</image:loc></image:image>`)
+      .join("");
+    return `  <url>${loc}${lastmod}${imgs}</url>`;
+  });
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n` +
+    `${urls.join("\n")}\n</urlset>\n`
   );
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join("\n")}\n</urlset>\n`;
 }

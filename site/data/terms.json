@@ -1,0 +1,110 @@
+[
+  {
+    "id": "high-fired",
+    "term": "High fired",
+    "definition": "The temperature range of around 2250 to 2400 degrees Fahrenheit. Cone 10, where most of my work is fired, is in this range."
+  },
+  {
+    "id": "mid-range",
+    "term": "Mid-range",
+    "definition": "The temperature range of around 2100 to 2250 degrees Fahrenheit, usually called cone 6. Some of my work is fired here. With the right clay and glazes it makes durable, food-safe tableware too."
+  },
+  {
+    "id": "low-fired",
+    "term": "Low fired",
+    "definition": "The wide temperature range of around 1400 to 2000 degrees Fahrenheit."
+  },
+  {
+    "id": "cone",
+    "term": "Cone",
+    "definition": "Potters and ceramists often say that something is fired to cone 10. The cone system is a measurement of both heat and time: a small cone that softens and bends at a chemically reliable point. This lets the person firing the kiln see how much heat work has been done to the ware.",
+    "link": {
+      "before": "For more, see the ",
+      "text": "Orton Ceramic website",
+      "href": "https://www.ortonceramic.com/pyrometric-cones",
+      "after": "."
+    }
+  },
+  {
+    "id": "reduction",
+    "term": "Reduction",
+    "definition": "A kiln atmosphere lacking the oxygen to burn the fuel completely. This causes the fuel to react with the oxygen in the glaze and clay."
+  },
+  {
+    "id": "oxidation",
+    "term": "Oxidation",
+    "definition": "A kiln atmosphere with ample oxygen to burn the fuel. This is typical of electric kilns. Ware fired in oxidation is typically lighter in color than in reduction."
+  },
+  {
+    "id": "porcelain",
+    "term": "Porcelain",
+    "definition": "Clay that is generally white to grey and develops a strong, tight body when fired. Natural porcelain is typically high fired."
+  },
+  {
+    "id": "stoneware",
+    "term": "Stoneware",
+    "definition": "Clay that is generally tan to brown, with the color coming from natural metals and minerals. Most natural stoneware is high fired."
+  },
+  {
+    "id": "kiln",
+    "term": "Kiln",
+    "definition": "Pronounced both \"kill\" and \"kiln\", this is a structure that can withstand high temperatures for long periods, used to fire clay and turn it into ceramics."
+  },
+  {
+    "id": "glaze",
+    "term": "Glaze",
+    "definition": "A layer added to a ceramic piece for durability, looks, or function. The glaze over the clay is often glassy and very strong."
+  },
+  {
+    "id": "vitrified",
+    "term": "Vitrified",
+    "definition": "Clay fired until it is dense and partly glassy, so it no longer soaks up water. Stoneware and porcelain fired to cone 10 are vitrified, which is a big part of why they are so durable."
+  },
+  {
+    "id": "food-safe",
+    "term": "Food safe",
+    "definition": "Describes a glaze that, properly mixed and fired, will not release harmful amounts of metals into food or drink. All of my glazes are lead free.",
+    "link": {
+      "before": "See ",
+      "text": "care & use",
+      "href": "/care.html",
+      "after": " for how to look after your pots."
+    }
+  },
+  {
+    "id": "thermal-shock",
+    "term": "Thermal shock",
+    "definition": "Cracking caused by a sudden change in temperature, like filling a frozen mug with boiling water. Clay handles slow changes well and fast ones badly."
+  },
+  {
+    "id": "shino",
+    "term": "Shino",
+    "definition": "A glaze that came from Japan, usually white to red. It is highly varied, and the kiln atmosphere is very important to how the color turns out. Shino glazes are high fired."
+  },
+  {
+    "id": "celadon",
+    "term": "Celadon",
+    "definition": "A glaze that came from China, Korea, and Japan, typically a shade of green. There are also blue, clear, and white celadons. Most celadons are high fired in reduction."
+  },
+  {
+    "id": "raku",
+    "term": "Raku",
+    "definition": "A style of firing developed in Japan for the tea ceremony. The ware is low fired, and historically under-fired to have a softer feel and sound, which generally means raku ware is not food safe by modern standards. American-style raku is mostly decorative and uses a post-firing reduction to create lustrous metallic glazes and deep blacks."
+  },
+  {
+    "id": "soda-fired",
+    "term": "Soda fired",
+    "definition": "A firing where the ware is glazed by introducing baking soda or soda ash at high temperature. This coats the whole interior of the kiln with sodium, which is very reactive at high temperatures, so the kiln must be specially prepared or the bricks will be eaten away. Soda firing came from a search for an alternative to salt firing, which uses similar methods but has a different look and behavior.",
+    "link": {
+      "before": "See the ",
+      "text": "soda kiln project",
+      "href": "/kilns.html#soda-kiln",
+      "after": "."
+    }
+  },
+  {
+    "id": "tenmoku",
+    "term": "Tenmoku (temmoku)",
+    "definition": "A glaze that is dark brown to black in most cases, named by Japanese tea masters for tea bowls (chawan) from the Mountain of Heaven area in China. Most of my tenmokus are fired in reduction, but some tenmoku glazes only work in oxidation."
+  }
+]
