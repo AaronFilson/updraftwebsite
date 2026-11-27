@@ -73,9 +73,10 @@ async function renderProducts() {
     box.replaceChildren(...items.map(productCard));
     renderFilters(items);
     // The list of pieces for search engines; each piece's own page has its price and availability.
-    const data = Object.assign(document.createElement("script"), { type: "application/ld+json" });
+    const existing = document.getElementById("shop-itemlist");
+    const data = existing ?? Object.assign(document.createElement("script"), { id: "shop-itemlist", type: "application/ld+json" });
     data.textContent = JSON.stringify(productData(items, location.origin));
-    document.head.append(data);
+    if (!existing) document.head.append(data);
     openFromHash(); // a link to one piece: /shop.html#p-ITEM
   } catch {
     box.innerHTML = '<p class="empty">The shop is unavailable right now. Please try again later.</p>';

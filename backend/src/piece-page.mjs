@@ -6,6 +6,8 @@
 // shell's, and its head tags go before </head>. Without a shell it is a plain page that search
 // engines are asked not to list, so a passing failure is never what they keep.
 
+import { shippingCents } from "./shipping.mjs";
+
 const SITE_NAME = "Updraft Pottery Studio";
 const esc = (s = "") => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 // JSON inside a <script> block: "<" written as an escape, so nothing in it can close the tag.
@@ -63,6 +65,75 @@ function materialOf(item) {
   return "Ceramic";
 }
 
+const FRACTIONS = { "¼": 0.25, "½": 0.5, "¾": 0.75, "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875 };
+const toInches = (whole, dec, frac) => (dec ? Number(`${whole}.${dec}`) : Number(whole) + (FRACTIONS[frac] ?? 0));
+const qvIn = (n) => ({ "@type": "QuantitativeValue", value: +n.toFixed(3), unitCode: "INH" });
+
+/** Parses dimensions (e.g. "9½″ × 3¾″" or "5½″ wide × 3″ tall") from a piece's spec line, in inches. */
+export function parseDimensions(item) {
+  const spec = specLine(item.description);
+  if (!spec) return {};
+  for (const raw of spec.split("·")) {
+    const seg = raw.trim();
+    if (!seg || seg.length > 60 || /,|\band\b|\bset\b/i.test(seg)) continue;
+    const pair = seg.match(
+      /^(\d{1,2})(?:\.(\d{1,2})|([¼½¾⅛⅜⅝⅞]))?\s*[″"]\s*(wide|across|tall|high)?\s*[×x]\s*(\d{1,2})(?:\.(\d{1,2})|([¼½¾⅛⅜⅝⅞]))?\s*[″"]\s*(wide|across|tall|high)?$/i,
+    );
+    if (pair) {
+      const a = toInches(pair[1], pair[2], pair[3]);
+      const la = (pair[4] ?? "").toLowerCase();
+      const b = toInches(pair[5], pair[6], pair[7]);
+      const lb = (pair[8] ?? "").toLowerCase();
+      if (!(a > 0 && b > 0)) return {};
+      const tallFirst =
+        la === "tall" ||
+        la === "high" ||
+        lb === "wide" ||
+        lb === "across" ||
+        (!la && !lb && (item.category === "Vases" || /\b(vase|bottle|pitcher|ewer|cylinder|tower)\b/i.test(item.name ?? "")));
+      return tallFirst ? { height: a, width: b } : { width: a, height: b };
+    }
+    const single = seg.match(/^(\d{1,2})(?:\.(\d{1,2})|([¼½¾⅛⅜⅝⅞]))?\s*[″"]\s*(wide|across)$/i);
+    if (single) {
+      const w = toInches(single[1], single[2], single[3]);
+      return w > 0 ? { width: w } : {};
+    }
+  }
+  return {};
+}
+
+const days = (minValue, maxValue) => ({ "@type": "QuantitativeValue", minValue, maxValue, unitCode: "DAY" });
+
+/** Merchant-listing shipping details: WA Zone 2 rate + US ceiling from shipping.mjs, or doesNotShip when pickup-only. */
+function shippingDetailsOf(item, currency = "USD") {
+  if (!(item.shipLb > 0)) {
+    return {
+      "@type": "OfferShippingDetails",
+      doesNotShip: true,
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "US" },
+    };
+  }
+  const wa = shippingCents([item.shipLb], { state: "WA", postalCode: "98402" });
+  const ny = shippingCents([item.shipLb], { state: "NY", postalCode: "10001" });
+  const ak = shippingCents([item.shipLb], { state: "AK", postalCode: "99501" });
+  if (wa.error || ny.error || ak.error) return null;
+  const usMax = Math.max(ny.cents, ak.cents);
+  return [
+    {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: (wa.cents / 100).toFixed(2), currency },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "US", addressRegion: "WA" },
+      deliveryTime: { "@type": "ShippingDeliveryTime", handlingTime: days(1, 2), transitTime: days(1, 2) },
+    },
+    {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: (usMax / 100).toFixed(2), currency },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "US" },
+      deliveryTime: { "@type": "ShippingDeliveryTime", handlingTime: days(1, 2), transitTime: days(2, 6) },
+    },
+  ];
+}
+
 function photoAlt(item, i) {
   const spec = specLine(item.description);
   return i === 0 && spec ? `${item.name} — ${spec}` : `${item.name}, photo ${i + 1}`;
@@ -82,8 +153,8 @@ function picture(url, { alt, sizes, widths, eager }) {
 export function structuredData(item, site) {
   const url = `${site}/p/${item.id}`;
   const many = item.variations.length > 1;
-  const delivery =
-    item.shipLb > 0 ? ["https://schema.org/OnSitePickup", "https://schema.org/ParcelService"] : ["https://schema.org/OnSitePickup"];
+  const dims = parseDimensions(item);
+  const delivery = ["https://schema.org/OnSitePickup", ...(item.shipLb > 0 ? ["https://schema.org/ParcelService"] : [])];
   const crumbs = [
     { name: "Home", item: `${site}/` },
     { name: "Shop", item: `${site}/shop.html` },
@@ -104,26 +175,32 @@ export function structuredData(item, site) {
         ...(item.category ? { category: item.category } : {}),
         material: materialOf(item),
         countryOfOrigin: "US",
+        ...(dims.width ? { width: qvIn(dims.width) } : {}),
+        ...(dims.height ? { height: qvIn(dims.height) } : {}),
         ...(item.shipLb > 0 ? { weight: { "@type": "QuantitativeValue", value: item.shipLb, unitCode: "LBR" } } : {}),
         creator: { "@type": "Person", "@id": `${site}/about.html#aaron`, name: "Aaron Filson" },
         brand: { "@type": "Brand", name: SITE_NAME },
-        offers: item.variations.map((v) => ({
-          "@type": "Offer",
-          ...(many ? { name: v.name } : {}),
-          url,
-          price: (v.price / 100).toFixed(2),
-          priceCurrency: v.currency ?? "USD",
-          availability: isOpen(v) ? "https://schema.org/InStock" : "https://schema.org/SoldOut",
-          itemCondition: "https://schema.org/NewCondition",
-          availableDeliveryMethod: delivery,
-          seller: { "@type": "OnlineStore", "@id": `${site}/#store`, name: SITE_NAME, url: `${site}/` },
-          // policies.html: returns are not accepted (a piece broken in shipping is refunded).
-          hasMerchantReturnPolicy: {
-            "@type": "MerchantReturnPolicy",
-            applicableCountry: "US",
-            returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
-          },
-        })),
+        offers: item.variations.map((v) => {
+          const shippingDetails = shippingDetailsOf(item, v.currency ?? "USD");
+          return {
+            "@type": "Offer",
+            ...(many ? { name: v.name } : {}),
+            url,
+            price: (v.price / 100).toFixed(2),
+            priceCurrency: v.currency ?? "USD",
+            availability: isOpen(v) ? "https://schema.org/InStock" : "https://schema.org/SoldOut",
+            itemCondition: "https://schema.org/NewCondition",
+            availableDeliveryMethod: delivery,
+            ...(shippingDetails ? { shippingDetails } : {}),
+            seller: { "@type": "OnlineStore", "@id": `${site}/#store`, name: SITE_NAME, url: `${site}/` },
+            // policies.html: returns are not accepted (a piece broken in shipping is refunded).
+            hasMerchantReturnPolicy: {
+              "@type": "MerchantReturnPolicy",
+              applicableCountry: "US",
+              returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
+            },
+          };
+        }),
       },
       {
         "@type": "BreadcrumbList",
@@ -262,5 +339,39 @@ export function piecesSitemap(items, site) {
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
     `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:image="http://www.google.com/schemas/sitemap-image/1.1">\n` +
     `${urls.join("\n")}\n</urlset>\n`
+  );
+}
+
+/** Atom 1.0 feed of pieces currently available in the shop (/p/feed.xml), for RSS readers and Pinterest. */
+export function piecesFeed(items, site) {
+  const open = items.filter((i) => i.variations.some(isOpen));
+  const dates = open.filter((i) => i.updatedAt).map((i) => i.updatedAt);
+  const updated = dates.sort().at(-1) ?? "2026-01-01T00:00:00Z";
+  const entries = open.map((i) => {
+    const url = `${site}/p/${i.id}`;
+    const photo = photosOf(i)[0];
+    const enclosure = photo ? `<link rel="enclosure" type="image/jpeg" href="${esc(site + sized(photo, 1200, "jpeg"))}"/>` : "";
+    return (
+      `  <entry>` +
+      `<id>${esc(url)}</id>` +
+      `<title>${esc(`${i.name} · ${priceText(i)}`)}</title>` +
+      `<link href="${esc(url)}"/>` +
+      enclosure +
+      `<updated>${esc(i.updatedAt || updated)}</updated>` +
+      `<summary>${esc(metaDescription(i))}</summary>` +
+      `</entry>`
+    );
+  });
+  return (
+    `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<feed xmlns="http://www.w3.org/2005/Atom">\n` +
+    `  <id>${esc(`${site}/p/feed.xml`)}</id>\n` +
+    `  <title>${esc(`${SITE_NAME} — Available Pieces`)}</title>\n` +
+    `  <link href="${esc(`${site}/shop.html`)}"/>\n` +
+    `  <link href="${esc(`${site}/p/feed.xml`)}" rel="self" type="application/atom+xml"/>\n` +
+    `  <updated>${esc(updated)}</updated>\n` +
+    `  <author><name>Aaron Filson</name></author>\n` +
+    `${entries.join("\n")}\n` +
+    `</feed>\n`
   );
 }

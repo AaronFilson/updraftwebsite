@@ -7,13 +7,16 @@
 //  - JS/CSS bundled, minified and content-hashed; HTML minified, comments stripped
 //  - the shell the API puts each piece's page in (piece-shell.html; backend/src/piece-page.mjs)
 //  - icons, web manifest, robots.txt and (when SITE_URL is set) the sitemaps
-import { readFile, writeFile, mkdir, rm, readdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rm, readdir, stat } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import sharp from "sharp";
 import * as esbuild from "esbuild";
 import { minify } from "html-minifier-terser";
 import { currentStage } from "./stage.mjs";
+import { INDEXNOW_KEY } from "./indexnow.mjs";
+import { priceText, specLine } from "../backend/src/piece-page.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SRC = path.join(ROOT, "site");
@@ -176,12 +179,15 @@ function figureHtml(entry, meta, eager, only) {
   const alt = esc(entry.alt ?? entry.title);
   const full = m.full ? ` data-full="${m.full.url}" data-full-size="${mb(m.full.size)}"` : "";
   const desc = entry.description ? ` data-desc="${esc(entry.description)}"` : "";
+  const caption = entry.description
+    ? `<span class="tile-title">${esc(entry.title)}</span> — ${esc(entry.description)}`
+    : `<span class="tile-title">${esc(entry.title)}</span>`;
   return `<figure class="tile" style="--r:${r}">
 <a href="${m.webp[widths.at(-1)]}" class="zoom" data-alt="${alt}" data-title="${esc(entry.title)}"${desc}${full}>
 <picture><source type="image/avif" srcset="${srcset("avif")}" sizes="${sizes}">
 <img src="${m.webp[only?.[0] ?? 400] ?? m.webp[400]}" srcset="${srcset("webp")}" sizes="${sizes}"
  width="${m.width}" height="${m.height}" alt="${alt}"${eager === "high" ? ' fetchpriority="high"' : eager ? "" : ' loading="lazy"'} decoding="async"></picture></a>
-<figcaption>${esc(entry.title)}</figcaption>
+<figcaption>${caption}</figcaption>
 </figure>`;
 }
 
@@ -412,7 +418,7 @@ function termsSchema(terms, url) {
 }
 
 // Structured data (@graph) per static page. Piece pages get Product + BreadcrumbList from backend/src/piece-page.mjs.
-function pageSchema(name, html, { ogs, icon512, email, meta, archive, terms }) {
+function pageSchema(name, html, { ogs, icon512, email, meta, archive, terms, catalog }) {
   if (name === SHELL || name === "error.html" || /<meta name="robots" content="noindex"/.test(html)) return null;
   const url = pageUrl(name);
   const storeId = `${SITE_URL}/#store`;
@@ -558,6 +564,19 @@ function pageSchema(name, html, { ogs, icon512, email, meta, archive, terms }) {
       description: desc,
       isPartOf: { "@id": websiteId },
       about: { "@id": storeId },
+      ...(catalog.length
+        ? {
+            mainEntity: {
+              "@type": "ItemList",
+              itemListElement: catalog.map((i, n) => ({
+                "@type": "ListItem",
+                position: n + 1,
+                url: `${SITE_URL}/p/${i.id}`,
+                name: i.name,
+              })),
+            },
+          }
+        : {}),
     };
   } else {
     primary = {
@@ -591,6 +610,7 @@ function headMeta(name, html, shared) {
   if (INDEXABLE && name !== SHELL && !/<meta name="robots" content="noindex"/.test(html)) {
     tags.push(
       `<link rel="canonical" href="${pageUrl(name)}">`,
+      `<link rel="alternate" type="application/atom+xml" title="${SITE_NAME} — Available Pieces" href="${SITE_URL}/p/feed.xml">`,
       `<meta property="og:site_name" content="${SITE_NAME}">`,
       `<meta property="og:type" content="website">`,
       `<meta property="og:title" content="${title}">`,
@@ -636,10 +656,112 @@ async function page(name, replacements, shared) {
   return out.length;
 }
 
+// Optional publish-time catalog snapshot (CATALOG_URL from publish.mjs, or CATALOG_FILE in tests),
+// so non-JS crawlers see real <a href="/p/..."> links on / and /shop.html; live JS still refreshes stock.
+async function loadPrerenderCatalog() {
+  const file = process.env.CATALOG_FILE?.trim();
+  if (file) {
+    const { items = [] } = JSON.parse(await readFile(path.resolve(ROOT, file), "utf8"));
+    return items;
+  }
+  const url = process.env.CATALOG_URL?.trim();
+  if (!url) return [];
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(6_000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { items = [] } = await res.json();
+    console.log(`Prerendering ${items.length} piece(s) from ${url}`);
+    return items;
+  } catch (err) {
+    console.warn(`Skipping catalog prerender (${url}): ${err.message}`);
+    return [];
+  }
+}
+
+const sizedCatalogUrl = (url, w, f) => `/api/img?u=${encodeURIComponent(url)}&w=${w}&f=${f}`;
+function catalogPic(url, sizes) {
+  const set = (f) => [400, 800].map((w) => `${sizedCatalogUrl(url, w, f)} ${w}w`).join(", ");
+  return (
+    `<picture><source type="image/avif" srcset="${esc(set("avif"))}" sizes="${sizes}">` +
+    `<img src="${esc(sizedCatalogUrl(url, 400, "webp"))}" srcset="${esc(set("webp"))}" sizes="${sizes}" width="800" height="800" alt="" loading="lazy" decoding="async"></picture>`
+  );
+}
+
+const PH_BODY = '<div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div>';
+
+function renderAvailable(items) {
+  const open = items.filter((i) => (i.variations ?? []).some((v) => (v.stock ?? null) !== 0)).slice(0, 4);
+  if (!open.length) {
+    return {
+      attrs: ' aria-busy="true"',
+      html: Array.from({ length: 4 }, () => `<div class="card" aria-hidden="true">${PH_BODY}</div>`).join("\n          "),
+    };
+  }
+  const cards = open.map((i) => {
+    const img = i.images?.[0] ?? i.image;
+    return (
+      `<a class="card product-link" href="/p/${esc(i.id)}">` +
+      (img ? catalogPic(img, "(max-width: 599px) 46vw, 260px") : '<div class="ph"></div>') +
+      `<div class="card-body"><h3>${esc(i.name)}</h3><span class="price">${esc(priceText(i))}</span></div></a>`
+    );
+  });
+  return { attrs: " data-prerendered", html: cards.join("\n          ") };
+}
+
+function renderShopCards(items) {
+  if (!items.length) {
+    const ph = Array.from({ length: 4 }, () => `<div class="card ph-card" aria-hidden="true">${PH_BODY}</div>`).join("\n            ");
+    const noscript =
+      '<noscript><p class="empty">The shop needs JavaScript turned on. You can still browse <a href="/#work">recent work</a> and <a href="/past-work.html">past work</a>.</p></noscript>';
+    return { attrs: ' aria-busy="true"', html: `<p class="vh">Loading pieces…</p>\n            ${ph}\n            ${noscript}` };
+  }
+  const cards = items.map((i) => {
+    const img = i.images?.[0] ?? i.image;
+    const spec = specLine(i.description);
+    return (
+      `<article class="card"><a class="media" href="/p/${esc(i.id)}" tabindex="-1" aria-hidden="true">` +
+      (img ? catalogPic(img, "(max-width: 599px) 46vw, 300px") : '<div class="ph"></div>') +
+      `</a><div class="card-body"><h3><a href="/p/${esc(i.id)}">${esc(i.name)}</a></h3>` +
+      (spec ? `<p class="spec">${esc(spec)}</p>` : "") +
+      `<div class="row"><span class="price">${esc(priceText(i))}</span></div></div></article>`
+    );
+  });
+  const noscript =
+    '<noscript><p class="empty">Select any piece above to view details, or turn on JavaScript to add to your cart and check out.</p></noscript>';
+  return { attrs: "", html: `${cards.join("\n            ")}\n            ${noscript}` };
+}
+
+const PAGE_SOURCES = {
+  "index.html": ["site/index.html", "site/data/work.json", "site/data/artist.json", "site/data/site.json"],
+  "about.html": ["site/about.html", "site/data/artist.json"],
+  "past-work.html": ["site/past-work.html", "site/data/archive.json"],
+  "kilns.html": ["site/kilns.html", "site/data/kiln-shed.json", "site/data/soda-kiln.json"],
+  "terms.html": ["site/terms.html", "site/data/terms.json"],
+  "care.html": ["site/care.html"],
+  "policies.html": ["site/policies.html", "site/data/site.json"],
+  "shop.html": ["site/shop.html"],
+};
+
+async function lastMod(pageName) {
+  const files = PAGE_SOURCES[pageName] ?? [`site/${pageName}`];
+  try {
+    const out = execFileSync("git", ["log", "-1", "--format=%cs", "--", ...files], {
+      cwd: ROOT,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(out)) return out;
+  } catch {
+    /* git unavailable or shallow checkout: fall back to file mtime */
+  }
+  const times = await Promise.all(files.map(async (f) => (await stat(path.join(ROOT, f))).mtimeMs));
+  return new Date(Math.max(...times)).toISOString().slice(0, 10);
+}
+
 await rm(OUT, { recursive: true, force: true });
 await mkdir(OUT, { recursive: true });
 
-const [slugs, workData, archiveData, artistData, kilnShedData, sodaKilnData, termsData] = await Promise.all([
+const [slugs, workData, archiveData, artistData, kilnShedData, sodaKilnData, termsData, catalogData] = await Promise.all([
   imageSlugs(),
   readData("work.json"),
   readData("archive.json"),
@@ -647,6 +769,7 @@ const [slugs, workData, archiveData, artistData, kilnShedData, sodaKilnData, ter
   readData("kiln-shed.json"),
   readData("soda-kiln.json"),
   readData("terms.json"),
+  loadPrerenderCatalog(),
 ]);
 const meta = await images(slugs);
 const ogs = await ogImages();
@@ -703,7 +826,9 @@ const common = (current, js = assets.site) => ({
   "{{contactEmail}}": esc(email),
   "{{signup}}": signup, // in the footer; the home page places it mid-page instead
 });
-const shared = { ogs, apple, icon512, email, meta, archive: archiveData, terms: termsData };
+const shared = { ogs, apple, icon512, email, meta, archive: archiveData, terms: termsData, catalog: catalogData };
+const available = renderAvailable(catalogData);
+const shopCards = renderShopCards(catalogData);
 
 const sizes = {
   "index.html": await page(
@@ -711,6 +836,8 @@ const sizes = {
     {
       ...common(""),
       "{{signup}}": "",
+      "{{availableAttrs}}": available.attrs,
+      "<!--available-cards-->": available.html,
       "<!--signup-->": signup,
       "<!--hero-show-->": await heroShow(meta),
       "<!--work-->": await gallery("work.json", meta), // below the fold now; the slideshow photo is the priority
@@ -752,7 +879,15 @@ const sizes = {
   "terms.html": await page("terms.html", { ...common("/terms.html"), "<!--terms-->": termsHtml(termsData) }, shared),
   "care.html": await page("care.html", common("/care.html"), shared),
   ...(email ? { "policies.html": await page("policies.html", common("/policies.html"), shared) } : {}),
-  "shop.html": await page("shop.html", common("/shop.html", assets.shop), shared),
+  "shop.html": await page(
+    "shop.html",
+    {
+      ...common("/shop.html", assets.shop),
+      "{{productsAttrs}}": shopCards.attrs,
+      "<!--shop-cards-->": shopCards.html,
+    },
+    shared,
+  ),
   "error.html": await page("error.html", common(""), shared),
   [SHELL]: await page(SHELL, common(""), shared),
 };
@@ -780,13 +915,21 @@ await writeFile(
     ? `User-agent: *\nAllow: /\nDisallow: /${SHELL}\n${SITE_URL ? `Sitemap: ${SITE_URL}/sitemap.xml\n` : ""}`
     : "User-agent: *\nDisallow: /\n",
 ); // staging stays out of search results
-// sitemap.xml names two: this build's pages (with their high-res gallery photos), and every piece's
-// page, which the API lists from Square (/p/sitemap.xml, backend/src/piece.mjs).
+if (INDEXABLE) await writeFile(path.join(OUT, `${INDEXNOW_KEY}.txt`), `${INDEXNOW_KEY}\n`);
+// sitemap.xml names two: this build's pages (with their high-res gallery photos and last-modified dates),
+// and every piece's page, which the API lists from Square (/p/sitemap.xml, backend/src/piece.mjs).
 if (SITE_URL && INDEXABLE) {
-  const urlEntries = indexable.map((n) => {
-    const imgs = (pageImages[n] ?? []).map((u) => `\n    <image:image><image:loc>${esc(SITE_URL + u)}</image:loc></image:image>`).join("");
-    return imgs ? `  <url>\n    <loc>${esc(pageUrl(n))}</loc>${imgs}\n  </url>` : `  <url><loc>${esc(pageUrl(n))}</loc></url>`;
-  });
+  const urlEntries = await Promise.all(
+    indexable.map(async (n) => {
+      const mod = await lastMod(n);
+      const imgs = (pageImages[n] ?? [])
+        .map((u) => `\n    <image:image><image:loc>${esc(SITE_URL + u)}</image:loc></image:image>`)
+        .join("");
+      return imgs
+        ? `  <url>\n    <loc>${esc(pageUrl(n))}</loc>\n    <lastmod>${mod}</lastmod>${imgs}\n  </url>`
+        : `  <url><loc>${esc(pageUrl(n))}</loc><lastmod>${mod}</lastmod></url>`;
+    }),
+  );
   await writeFile(
     path.join(OUT, "sitemap-pages.xml"),
     `<?xml version="1.0" encoding="UTF-8"?>

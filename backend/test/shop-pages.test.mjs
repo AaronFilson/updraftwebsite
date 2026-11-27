@@ -5,7 +5,7 @@ import { handler, _setSquare } from "../src/handler.mjs";
 import sharp from "sharp";
 import { parseRequest, handler as images, _resetCatalog, _catalogWaits } from "../src/images.mjs";
 import { _resetShell } from "../src/piece.mjs";
-import { renderPiece, structuredData, pieceTitle } from "../src/piece-page.mjs";
+import { renderPiece, structuredData, pieceTitle, parseDimensions } from "../src/piece-page.mjs";
 
 const SQUARE_PHOTO = "https://items-images-sandbox.s3.us-west-2.amazonaws.com/files/abc/original.jpeg";
 
@@ -148,7 +148,9 @@ const get = (path) => handler({ requestContext: { http: { method: "GET" } }, raw
 
 test("the catalog lists every photo, in order, the piece's type and its shipping weight", async () => {
   _setSquare(fakeCatalog());
-  const { items } = JSON.parse((await get("/api/catalog")).body);
+  const res = await get("/api/catalog");
+  assert.equal(res.headers["x-robots-tag"], "noindex");
+  const { items } = JSON.parse(res.body);
   assert.equal(items[0].image, SQUARE_PHOTO);
   assert.deepEqual(items[0].images, [SQUARE_PHOTO, SQUARE_PHOTO.replace("abc", "def")]);
   assert.equal(items[0].category, "Bowls");
@@ -193,6 +195,10 @@ test("a piece's page has its name, price, photos, words and product data, and no
   assert.equal(product.offers[0].price, "65.00");
   assert.equal(product.offers[0].availability, "https://schema.org/InStock");
   assert.deepEqual(product.offers[0].availableDeliveryMethod, ["https://schema.org/OnSitePickup", "https://schema.org/ParcelService"]);
+  const ship = product.offers[0].shippingDetails;
+  assert.equal(ship.length, 2);
+  assert.equal(ship[0].shippingDestination.addressRegion, "WA");
+  assert.ok(Number(ship[1].shippingRate.value) >= Number(ship[0].shippingRate.value));
   assert.equal(product.image.length, 2);
   assert.deepEqual(
     crumbs.itemListElement.map((c) => c.name),
@@ -201,6 +207,27 @@ test("a piece's page has its name, price, photos, words and product data, and no
   assert.equal(crumbs.itemListElement.at(-1).item, undefined, "current page crumb omits item URL");
   const data = JSON.parse(res.body.match(/<script type="application\/json" id="piece-data">(.*?)<\/script>/)[1]);
   assert.deepEqual(data.variations, [{ id: "V1", name: "R", price: 6500, currency: "USD", stock: 1 }]);
+});
+
+test("dimensions and pickup-only shipping details are derived cleanly from piece metadata", () => {
+  assert.deepEqual(parseDimensions({ name: "Lantern bowl", category: "Bowls", description: "Crackle · 9½″ × 3¾″" }), {
+    width: 9.5,
+    height: 3.75,
+  });
+  assert.deepEqual(parseDimensions({ name: "Tall flared lantern vase", category: "Vases", description: "Crackle · 11¾″ × 6½″" }), {
+    height: 11.75,
+    width: 6.5,
+  });
+  assert.deepEqual(parseDimensions({ name: "Bowl", description: "Cone 10 · 5½″ wide × 3″ tall" }), { width: 5.5, height: 3 });
+  assert.deepEqual(parseDimensions({ name: "Nested bowls", description: "7¼″, 7¾″ and 8″ × 4½″, set of 3" }), {});
+
+  const pickupOnly = structuredData(
+    { id: "P1", name: "Large sculpture", description: "Cone 10 · 8″ × 5″", variations: [{ id: "V", name: "R", price: 20000, stock: 1 }] },
+    "https://s.example",
+  )["@graph"][0];
+  assert.deepEqual(pickupOnly.width, { "@type": "QuantitativeValue", value: 8, unitCode: "INH" });
+  assert.deepEqual(pickupOnly.height, { "@type": "QuantitativeValue", value: 5, unitCode: "INH" });
+  assert.equal(pickupOnly.offers[0].shippingDetails.doesNotShip, true);
 });
 
 test("piece titles include 'Handmade pottery' when short enough, and stay within 60 characters", () => {
@@ -240,6 +267,7 @@ test("a piece's page goes into the site's shell; without one it's a plain page k
   const fetched = t.mock.method(globalThis, "fetch", async () => new Response(SHELL));
   const plain = await get("/p/I1");
   assert.match(plain.body, /<meta name="robots" content="noindex">/);
+  assert.equal(plain.headers["x-robots-tag"], "noindex");
   assert.match(plain.headers["cache-control"], /max-age=60/, "kept briefly, so the styled page soon takes over");
   assert.equal(fetched.mock.callCount(), 0);
 });
@@ -263,13 +291,15 @@ test("other pieces still for sale are linked from a piece's page, and its text i
 test("unknown or odd ids are gone (410), never an error", async () => {
   _setSquare(fakeCatalog());
   // 410 rather than 404, which CloudFront would replace with the site's generic error page.
-  assert.equal((await get("/p/NOPE")).statusCode, 410);
-  assert.match((await get("/p/NOPE")).body, /isn't listed any more/);
+  const gone = await get("/p/NOPE");
+  assert.equal(gone.statusCode, 410);
+  assert.equal(gone.headers["x-robots-tag"], "noindex");
+  assert.match(gone.body, /isn't listed any more/);
   assert.equal((await get("/p/..%2Fapi%2Fcatalog")).statusCode, 410);
   assert.equal((await get("/p/%E0")).statusCode, 410, "a malformed escape is not an unhandled error");
 });
 
-test("the pieces' sitemap lists every listed piece with the day it last changed and its photos", async () => {
+test("the pieces' sitemap and Atom feed list pieces with dates and photos", async () => {
   _setSquare(fakeCatalog());
   const res = await get("/p/sitemap.xml");
   assert.equal(res.statusCode, 200);
@@ -277,4 +307,10 @@ test("the pieces' sitemap lists every listed piece with the day it last changed 
   assert.match(res.body, /xmlns:image="http:\/\/www\.google\.com\/schemas\/sitemap-image\/1\.1"/);
   assert.match(res.body, /<url><loc>\/p\/I1<\/loc><lastmod>2026-10-15<\/lastmod><image:image><image:loc>\/api\/img\?u=/);
   assert.equal([...res.body.matchAll(/<image:loc>/g)].length, 2);
+
+  const atom = await get("/p/feed.xml");
+  assert.equal(atom.statusCode, 200);
+  assert.match(atom.headers["content-type"], /application\/atom\+xml/);
+  assert.ok(atom.body.includes("<title>Celadon bowl · $65.00</title>"));
+  assert.ok(atom.body.includes('rel="enclosure" type="image/jpeg"'));
 });

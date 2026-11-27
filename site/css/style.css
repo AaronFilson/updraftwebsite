@@ -214,6 +214,7 @@ label.field { display: grid; gap: .25rem; font-size: .95rem; }
 .tile img { width: 100%; height: auto; aspect-ratio: var(--r); object-fit: cover; transition: transform .35s ease; }
 .tile a:hover img, .tile a:focus-visible img { transform: scale(1.03); }
 .tile figcaption { font-size: .9rem; line-height: 1.35; color: var(--muted); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tile-title { color: var(--ink); font-weight: 600; }
 
 /* cart + checkout */
 .shop-layout { display: grid; gap: 2rem; }

@@ -221,6 +221,10 @@ const deployApi = () => {
   );
 };
 
+const canManageCfFunctions = tryAws("cloudfront", "list-functions", "--max-items", "1") !== null;
+if (!canManageCfFunctions)
+  console.log("Note: IAM policy lacks cloudfront:*Function*; deploying with EnableEdgeRedirects=false (see deploy/README.md).");
+
 const deploySite = (api) => {
   step(`Routing ${stage.siteStack}: /api/checkout -> ${api.CheckoutFunction}, /api/* -> ${api.ApiFunction}`);
   aws(
@@ -235,6 +239,8 @@ const deploySite = (api) => {
     `DomainName=${stage.domain}`,
     `IncludeWww=${stage.includeWww}`,
     `ManageDns=${stage.manageDns}`,
+    `Indexable=${stage.indexable}`,
+    `EnableEdgeRedirects=${canManageCfFunctions}`,
     `NameSuffix=${stage.name === "prod" ? "" : `-${stage.name}`}`,
     `ApiDomain=${new URL(api.ApiUrl).host}`,
     `CheckoutDomain=${new URL(api.CheckoutUrl).host}`,

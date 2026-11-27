@@ -8,6 +8,7 @@ export const respond = (status, body, extra = {}) => ({
   headers: {
     "cache-control": "no-store",
     "content-type": "application/json",
+    "x-robots-tag": "noindex",
     "access-control-allow-origin": ALLOWED_ORIGIN,
     "access-control-allow-headers": "content-type, x-amz-content-sha256",
     "access-control-allow-methods": "GET,POST,OPTIONS",

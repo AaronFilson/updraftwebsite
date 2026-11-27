@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { INDEXNOW_KEY, submitIndexNow } from "../../../scripts/indexnow.mjs";
 
 const SITE = path.resolve(import.meta.dirname, "..", "..");
 const PAGES = ["index.html", "shop.html", "past-work.html", "about.html", "kilns.html", "terms.html", "care.html", "policies.html"];
@@ -32,4 +33,44 @@ test("every term in terms.json has a unique anchor id and valid link", async () 
     assert.ok(t.term?.trim() && t.definition?.trim(), `${t.id}: missing term or definition`);
     if (t.link) assert.match(t.link.href, /^(https:\/\/|\/)/, `${t.id}: invalid link href`);
   }
+});
+
+test("gallery photos have descriptive, non-repetitive alt text", async () => {
+  for (const file of ["work.json", "archive.json", "artist.json", "kiln-shed.json", "soda-kiln.json"]) {
+    const entries = JSON.parse(await readFile(path.join(SITE, "data", file), "utf8"));
+    for (const e of entries) {
+      assert.ok((e.alt ?? "").trim().length >= 15, `${file} (${e.image}): alt too short`);
+      assert.ok(!e.alt.startsWith(`${e.title}. `), `${file} (${e.image}): alt repeats "${e.title}. "`);
+    }
+  }
+});
+
+test("submitIndexNow sends deduplicated same-host URLs and never throws on network errors", async () => {
+  let sentBody = null;
+  const ok = await submitIndexNow(
+    "https://updraftpotterystudio.com/",
+    [
+      "https://updraftpotterystudio.com/",
+      "https://updraftpotterystudio.com/",
+      "https://updraftpotterystudio.com/shop.html",
+      "https://other.example/nope",
+    ],
+    async (_url, init) => {
+      sentBody = JSON.parse(String(init.body));
+      return new Response("", { status: 202 });
+    },
+  );
+  assert.deepEqual(ok, { sent: 2, status: 202 });
+  assert.deepEqual(sentBody, {
+    host: "updraftpotterystudio.com",
+    key: INDEXNOW_KEY,
+    keyLocation: `https://updraftpotterystudio.com/${INDEXNOW_KEY}.txt`,
+    urlList: ["https://updraftpotterystudio.com/", "https://updraftpotterystudio.com/shop.html"],
+  });
+
+  const failed = await submitIndexNow("https://updraftpotterystudio.com", ["https://updraftpotterystudio.com/"], async () => {
+    throw new Error("offline");
+  });
+  assert.equal(failed.sent, 0);
+  assert.equal(failed.error, "offline");
 });

@@ -23,6 +23,12 @@ Parameters:
   NameSuffix: { Type: String, Default: "", Description: "Empty for production (keeps existing names), e.g. -staging otherwise" }
   IncludeWww: { Type: String, Default: "true", AllowedValues: ["true", "false"] }
   ManageDns: { Type: String, Default: "false", AllowedValues: ["true", "false"], Description: "Create the A/AAAA alias records here (staging)" }
+  Indexable: { Type: String, Default: "true", AllowedValues: ["true", "false"], Description: "false adds X-Robots-Tag: noindex (staging)" }
+  EnableEdgeRedirects:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: "Attach the CloudFront Function that 301-redirects www, /index.html, and extensionless page paths"
 
 Conditions:
   HasApi: !Not [!Equals [!Ref ApiDomain, ""]]
@@ -34,6 +40,8 @@ Conditions:
   LockAny: !Or [!Condition LockApi, !Condition LockCheckout, !Condition LockImages]
   Www: !Equals [!Ref IncludeWww, "true"]
   Dns: !Equals [!Ref ManageDns, "true"]
+  DisallowRobots: !Equals [!Ref Indexable, "false"]
+  EdgeRedirects: !Equals [!Ref EnableEdgeRedirects, "true"]
 
 Resources:
   SiteBucket:
@@ -188,6 +196,11 @@ Resources:
     Properties:
       ResponseHeadersPolicyConfig:
         Name: !Sub updraft-site${NameSuffix}-security-headers
+        CustomHeadersConfig: !If
+          - DisallowRobots
+          - Items:
+              - { Header: X-Robots-Tag, Value: noindex, Override: true }
+          - !Ref AWS::NoValue
         SecurityHeadersConfig:
           StrictTransportSecurity: { AccessControlMaxAgeSec: 63072000, IncludeSubdomains: true, Override: true }
           ContentTypeOptions: { Override: true }
@@ -205,6 +218,57 @@ Resources:
               connect-src 'self' https://*.squareup.com https://*.squareupsandbox.com https://*.squarecdn.com https://o160250.ingest.sentry.io;
               frame-src https://*.squarecdn.com https://*.squareup.com https://*.squareupsandbox.com https://*.cardinalcommerce.com;
               base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'
+
+  # 301-redirects www.<domain> -> <domain>, /index.html -> /, and extensionless page URLs (/shop -> /shop.html).
+  CanonicalRedirects:
+    Type: AWS::CloudFront::Function
+    Condition: EdgeRedirects
+    Properties:
+      Name: !Sub updraft-redirects${NameSuffix}
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Canonical host and page URL 301 redirects
+        Runtime: cloudfront-js-2.0
+      FunctionCode: !Sub |
+        const PAGES = {
+          "/about": "/about.html",
+          "/past-work": "/past-work.html",
+          "/kilns": "/kilns.html",
+          "/terms": "/terms.html",
+          "/shop": "/shop.html",
+          "/care": "/care.html",
+          "/policies": "/policies.html",
+        };
+        function qs(q) {
+          const parts = [];
+          for (const k in q) {
+            const e = q[k];
+            if (e.multiValue) {
+              for (let i = 0; i < e.multiValue.length; i++) {
+                const mv = e.multiValue[i];
+                parts.push(mv.value ? encodeURIComponent(k) + "=" + encodeURIComponent(mv.value) : encodeURIComponent(k));
+              }
+            } else {
+              parts.push(e.value ? encodeURIComponent(k) + "=" + encodeURIComponent(e.value) : encodeURIComponent(k));
+            }
+          }
+          return parts.length ? "?" + parts.join("&") : "";
+        }
+        function handler(event) {
+          const req = event.request;
+          const host = req.headers.host && req.headers.host.value;
+          const raw = req.uri || "/";
+          const trimmed = raw.length > 1 && raw.endsWith("/") ? raw.slice(0, -1) : raw;
+          const target = trimmed === "/index.html" ? "/" : PAGES[trimmed] || null;
+          const needHost = host === "www.${DomainName}";
+          if (!needHost && !target) return req;
+          const location = (needHost ? "https://${DomainName}" : "") + (target || raw) + qs(req.querystring);
+          return {
+            statusCode: 301,
+            statusDescription: "Moved Permanently",
+            headers: { location: { value: location } },
+          };
+        }
 
   Distribution:
     Type: AWS::CloudFront::Distribution
@@ -253,6 +317,11 @@ Resources:
           Compress: true
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # Managed-CachingOptimized
           ResponseHeadersPolicyId: !Ref SecurityHeaders
+          FunctionAssociations: !If
+            - EdgeRedirects
+            - - EventType: viewer-request
+                FunctionARN: !GetAtt CanonicalRedirects.FunctionARN
+            - !Ref AWS::NoValue
         # Order matters: CloudFront uses the first matching pattern, so /api/checkout and /api/img come before /api/*.
         CacheBehaviors:
           - !If
@@ -294,6 +363,11 @@ Resources:
               Compress: true
               CachePolicyId: !Ref PieceCachePolicy
               ResponseHeadersPolicyId: !Ref SecurityHeaders
+              FunctionAssociations: !If
+                - EdgeRedirects
+                - - EventType: viewer-request
+                    FunctionARN: !GetAtt CanonicalRedirects.FunctionARN
+                - !Ref AWS::NoValue
             - !Ref AWS::NoValue
         CustomErrorResponses:
           - { ErrorCode: 403, ResponseCode: 404, ResponsePagePath: /error.html, ErrorCachingMinTTL: 60 }

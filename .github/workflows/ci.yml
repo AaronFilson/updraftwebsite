@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch:
 
 # The jobs only read the repository; nothing here needs to write.
 permissions:

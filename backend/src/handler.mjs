@@ -5,6 +5,7 @@
 //   POST /api/subscribe -> email signup into the Square customer directory (subscribe.mjs)
 //   GET  /p/<item id>   -> the page for one piece, in the site's own shell (piece.mjs)
 //   GET  /p/sitemap.xml -> every piece's address, for search engines (piece.mjs)
+//   GET  /p/feed.xml    -> Atom feed of available pieces, for RSS and Pinterest (piece.mjs)
 // Each function serves only the routes in ROUTES (the template gives checkout its own function).
 import { SquareError } from "square";
 import { respond, clientIp } from "./http.mjs";
@@ -12,7 +13,7 @@ import { loadCatalog } from "./catalog.mjs";
 import { quote, checkout, declineMessage } from "./checkout.mjs";
 import { subscribe, _resetLimits as resetSubscribeLimits } from "./subscribe.mjs";
 import { _resetSales } from "./stock.mjs";
-import { piece, sitemap } from "./piece.mjs";
+import { piece, sitemap, feed } from "./piece.mjs";
 
 const routes = new Set((process.env.ROUTES ?? "catalog,quote,subscribe,checkout,piece").split(",").map((r) => r.trim()));
 const posts = { "/api/quote": quote, "/api/checkout": checkout, "/api/subscribe": subscribe };
@@ -40,6 +41,7 @@ export async function handler(event) {
     // Square ids are plain letters and digits: the path is passed on as sent (piece() checks it), never
     // decoded, since a malformed escape like /p/%E0 would throw and be answered as an unhandled error.
     if (method === "GET" && routes.has("piece") && path === "/p/sitemap.xml") return await sitemap();
+    if (method === "GET" && routes.has("piece") && path === "/p/feed.xml") return await feed();
     if (method === "GET" && routes.has("piece") && path?.startsWith("/p/")) return await piece(path.slice(3));
     if (method === "POST" && posts[path]) {
       const body = readBody(event);

@@ -3,12 +3,12 @@
 // under /p/ may only list pages under /p/, which is all it needs, and the /p/* route is already here.
 import { ALLOWED_ORIGIN } from "./config.mjs";
 import { loadCatalog } from "./catalog.mjs";
-import { renderPiece, gonePage, piecesSitemap } from "./piece-page.mjs";
+import { renderPiece, gonePage, piecesSitemap, piecesFeed } from "./piece-page.mjs";
 
 const site = () => (ALLOWED_ORIGIN === "*" ? "" : ALLOWED_ORIGIN);
-const reply = (status, type, body, cache) => ({
+const reply = (status, type, body, cache, extra = {}) => ({
   statusCode: status,
-  headers: { "content-type": `${type}; charset=utf-8`, "cache-control": cache },
+  headers: { "content-type": `${type}; charset=utf-8`, "cache-control": cache, ...extra },
   body,
 });
 
@@ -44,7 +44,7 @@ export async function piece(id) {
   const item = items.find((i) => i.id === id);
   // 410 Gone, not 404: CloudFront swaps every 403/404 for the site's error page (deploy/site.yaml), and
   // someone following an old link should hear that the piece has gone, with a way to the shop.
-  if (!item) return reply(410, "text/html", gonePage(), "public, max-age=60");
+  if (!item) return reply(410, "text/html", gonePage(), "public, max-age=60", { "x-robots-tag": "noindex" });
   const html = await pageShell();
   // Without the shell the page is the plain fallback: kept only briefly.
   return reply(
@@ -52,9 +52,14 @@ export async function piece(id) {
     "text/html",
     renderPiece({ item, items, shell: html, site: site() }),
     html ? "public, max-age=300" : "public, max-age=60",
+    html ? {} : { "x-robots-tag": "noindex" },
   );
 }
 
 export async function sitemap() {
   return reply(200, "application/xml", piecesSitemap(await loadCatalog(), site()), "public, max-age=300");
+}
+
+export async function feed() {
+  return reply(200, "application/atom+xml", piecesFeed(await loadCatalog(), site()), "public, max-age=300");
 }

@@ -10,7 +10,7 @@
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
-import { renderPiece, gonePage, piecesSitemap } from "../backend/src/piece-page.mjs";
+import { renderPiece, gonePage, piecesSitemap, piecesFeed } from "../backend/src/piece-page.mjs";
 
 const DIST = path.resolve(import.meta.dirname, "..", "dist");
 const args = process.argv.slice(2);
@@ -32,6 +32,17 @@ const TYPES = {
   ".webmanifest": "application/manifest+json",
   ".txt": "text/plain",
   ".xml": "text/xml",
+};
+
+const REDIRECT_PATHS = {
+  "/index.html": "/",
+  "/about": "/about.html",
+  "/past-work": "/past-work.html",
+  "/kilns": "/kilns.html",
+  "/terms": "/terms.html",
+  "/shop": "/shop.html",
+  "/care": "/care.html",
+  "/policies": "/policies.html",
 };
 
 // Pass an /api/* request through to the deployed site (its CloudFront signs it for the functions).
@@ -57,14 +68,20 @@ async function piecePage(res, url) {
   const { items } = PIECES ? JSON.parse(await readFile(PIECES, "utf8")) : await (await fetch(`${API}/api/catalog`)).json();
   const site = `http://localhost:${port}`;
   if (url.pathname === "/p/sitemap.xml") return res.writeHead(200, { "content-type": TYPES[".xml"] }).end(piecesSitemap(items, site));
+  if (url.pathname === "/p/feed.xml")
+    return res.writeHead(200, { "content-type": "application/atom+xml; charset=utf-8" }).end(piecesFeed(items, site));
   const item = items.find((i) => i.id === url.pathname.slice(3));
-  if (!item) return res.writeHead(410, { "content-type": TYPES[".html"] }).end(gonePage());
+  if (!item) return res.writeHead(410, { "content-type": TYPES[".html"], "x-robots-tag": "noindex" }).end(gonePage());
   const shell = await readFile(path.join(DIST, "piece-shell.html"), "utf8").catch(() => null);
-  res.writeHead(200, { "content-type": TYPES[".html"] }).end(renderPiece({ item, items, shell, site }));
+  res
+    .writeHead(200, { "content-type": TYPES[".html"], ...(shell ? {} : { "x-robots-tag": "noindex" }) })
+    .end(renderPiece({ item, items, shell, site }));
 }
 
 createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
+  const trimmed = url.pathname.length > 1 && url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+  if (REDIRECT_PATHS[trimmed]) return res.writeHead(301, { location: REDIRECT_PATHS[trimmed] + url.search }).end();
   if (CATALOG && url.pathname === "/api/catalog")
     return res.writeHead(200, { "content-type": TYPES[".json"], "cache-control": "no-store" }).end(await readFile(CATALOG));
   if (API && url.pathname.startsWith("/api/")) return proxy(req, res, url);

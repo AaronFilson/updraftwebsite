@@ -23,6 +23,7 @@
       "Effect": "Allow",
       "Action": [
         "cloudfront:*Distribution*",
+        "cloudfront:*Function*",
         "cloudfront:*OriginAccessControl*",
         "cloudfront:*ResponseHeadersPolicy*",
         "cloudfront:*Invalidation*",

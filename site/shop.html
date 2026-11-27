@@ -26,13 +26,8 @@
           <div id="filters" class="filters" role="group" aria-label="Show pieces by type" hidden></div>
           <!-- Placeholder cards hold the grid's space until the pieces load (shop.js replaces them), so the
                cart below doesn't jump on phones (it did: layout shift 0.3). -->
-          <div id="products" class="grid products" aria-busy="true">
-            <p class="vh">Loading pieces…</p>
-            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
-            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
-            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
-            <div class="card ph-card" aria-hidden="true"><div class="ph"></div><div class="card-body"><h3>&nbsp;</h3><span class="price">&nbsp;</span></div></div>
-            <noscript><p class="empty">The shop needs JavaScript turned on. You can still browse <a href="/#work">recent work</a> and <a href="/past-work.html">past work</a>.</p></noscript>
+          <div id="products" class="grid products"{{productsAttrs}}>
+            <!--shop-cards-->
           </div>
         </div>
 

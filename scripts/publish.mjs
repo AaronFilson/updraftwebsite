@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import { currentStage } from "./stage.mjs";
+import { submitIndexNow } from "./indexnow.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DIST = path.join(ROOT, "dist");
@@ -31,7 +32,7 @@ console.log(`Publishing to ${bucket} (CloudFront ${outputs.DistributionId}) as $
 execFileSync(process.execPath, [path.join(ROOT, "scripts", "build.mjs")], {
   stdio: "inherit",
   cwd: ROOT,
-  env: { ...process.env, SITE_URL, STAGE: stage.name },
+  env: { ...process.env, SITE_URL, STAGE: stage.name, CATALOG_URL: `${SITE_URL}/api/catalog` },
 });
 
 const YEAR = "public,max-age=31536000,immutable";
@@ -97,4 +98,19 @@ if (!DRY) {
   ).Invalidation.Id;
   console.log(`\nInvalidation ${id} started; changes are live within a few minutes.`);
   console.log(`Test URL: https://${outputs.DistributionDomain}/`);
+
+  if (stage.indexable) {
+    const htmlPages = built
+      .filter((f) => f.endsWith(".html") && f !== "error.html" && f !== "piece-shell.html")
+      .map((f) => (f === "index.html" ? `${SITE_URL}/` : `${SITE_URL}/${f}`));
+    let pieceUrls = [];
+    try {
+      const xml = await (await fetch(`${SITE_URL}/p/sitemap.xml`, { signal: AbortSignal.timeout(5_000) })).text();
+      pieceUrls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+    } catch {
+      /* piece sitemap optional */
+    }
+    const ix = await submitIndexNow(SITE_URL, [...htmlPages, ...pieceUrls]);
+    console.log(`IndexNow: ${ix.sent ? `notified (${ix.sent} URLs, HTTP ${ix.status})` : `skipped (${ix.error ?? "no URLs"})`}`);
+  }
 }
