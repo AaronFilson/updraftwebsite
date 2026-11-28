@@ -13,9 +13,11 @@ test("every indexable page has one h1, a title <= 60 chars, and a 70-160 char de
     const desc = (html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "").replaceAll("&amp;", "&");
     const h1s = html.match(/<h1\b/g) ?? [];
     assert.equal(h1s.length, 1, `${name}: expected one <h1>`);
-    for (const [tag, inner] of html.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/g)) {
+    for (const [tag, , inner] of html.matchAll(/<h([1-6])(?:\s[^>]*)?>([\s\S]*?)<\/h\1>/g)) {
       const text = inner
-        .replace(/<[^>]*>/g, "")
+        .split("<")
+        .map((part, i) => (i === 0 ? part : part.slice(part.indexOf(">") + 1)))
+        .join("")
         .replaceAll("&nbsp;", "")
         .trim();
       assert.ok(text.length > 0, `${name}: empty heading ${tag}`);
