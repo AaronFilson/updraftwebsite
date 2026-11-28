@@ -436,7 +436,12 @@ function pageSchema(name, html, { ogs, icon512, email, meta, archive, terms }) {
           ...(email ? { email } : {}),
           founder: { "@type": "Person", "@id": personId, name: "Aaron Filson", url: pageUrl("about.html") },
           address: { "@type": "PostalAddress", addressLocality: "Tacoma", addressRegion: "WA", addressCountry: "US" },
-          areaServed: { "@type": "Country", name: "US" },
+          areaServed: [
+            { "@type": "City", name: "Tacoma", containedInPlace: { "@type": "State", name: "Washington" } },
+            { "@type": "AdministrativeArea", name: "Pierce County, WA" },
+            { "@type": "Place", name: "Seattle-Tacoma metropolitan area" },
+            { "@type": "Country", name: "US" },
+          ],
           sameAs: SAME_AS,
           hasMerchantReturnPolicy: {
             "@type": "MerchantReturnPolicy",

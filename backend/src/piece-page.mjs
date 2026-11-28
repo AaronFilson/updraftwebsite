@@ -5,6 +5,7 @@
 // styles and scripts of every page): the piece replaces [[piece]] in <main>, its title replaces the
 // shell's, and its head tags go before </head>. Without a shell it is a plain page that search
 // engines are asked not to list, so a passing failure is never what they keep.
+import { labelDollars } from "./shipping.mjs";
 
 const SITE_NAME = "Updraft Pottery Studio";
 const esc = (s = "") => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -78,12 +79,49 @@ function picture(url, { alt, sizes, widths, eager }) {
   );
 }
 
+/** OfferShippingDetails for one parcel of billed weight shipLb (WA state + US ceiling), or null when unpriced. */
+function shippingDetailsFor(shipLb) {
+  if (!(shipLb > 0)) return null;
+  const maxForZone = (zone) => {
+    const ups = labelDollars("ups", zone, shipLb);
+    if (ups === null) return null;
+    return Math.ceil(Math.max(ups, labelDollars("usps", zone, shipLb) ?? 0));
+  };
+  const wa = maxForZone(3);
+  const us = maxForZone(8);
+  if (wa === null || us === null) return null;
+  const handlingTime = { "@type": "QuantitativeValue", minValue: 1, maxValue: 2, unitCode: "DAY" };
+  return [
+    {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: wa.toFixed(2), currency: "USD" },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "US", addressRegion: "WA" },
+      deliveryTime: {
+        "@type": "ShippingDeliveryTime",
+        handlingTime,
+        transitTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 3, unitCode: "DAY" },
+      },
+    },
+    {
+      "@type": "OfferShippingDetails",
+      shippingRate: { "@type": "MonetaryAmount", value: us.toFixed(2), currency: "USD" },
+      shippingDestination: { "@type": "DefinedRegion", addressCountry: "US" },
+      deliveryTime: {
+        "@type": "ShippingDeliveryTime",
+        handlingTime,
+        transitTime: { "@type": "QuantitativeValue", minValue: 1, maxValue: 6, unitCode: "DAY" },
+      },
+    },
+  ];
+}
+
 /** schema.org data: the Product with an Offer per option, and where it sits in the shop. */
 export function structuredData(item, site) {
   const url = `${site}/p/${item.id}`;
   const many = item.variations.length > 1;
   const delivery =
     item.shipLb > 0 ? ["https://schema.org/OnSitePickup", "https://schema.org/ParcelService"] : ["https://schema.org/OnSitePickup"];
+  const shippingDetails = shippingDetailsFor(item.shipLb);
   const crumbs = [
     { name: "Home", item: `${site}/` },
     { name: "Shop", item: `${site}/shop.html` },
@@ -123,6 +161,7 @@ export function structuredData(item, site) {
             applicableCountry: "US",
             returnPolicyCategory: "https://schema.org/MerchantReturnNotPermitted",
           },
+          ...(shippingDetails ? { shippingDetails } : {}),
         })),
       },
       {

@@ -13,6 +13,13 @@ test("every indexable page has one h1, a title <= 60 chars, and a 70-160 char de
     const desc = (html.match(/<meta name="description" content="([^"]*)"/)?.[1] ?? "").replaceAll("&amp;", "&");
     const h1s = html.match(/<h1\b/g) ?? [];
     assert.equal(h1s.length, 1, `${name}: expected one <h1>`);
+    for (const [tag, inner] of html.matchAll(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/g)) {
+      const text = inner
+        .replace(/<[^>]*>/g, "")
+        .replaceAll("&nbsp;", "")
+        .trim();
+      assert.ok(text.length > 0, `${name}: empty heading ${tag}`);
+    }
     assert.ok(title.length >= 20 && title.length <= 60, `${name}: title length ${title.length} ("${title}")`);
     assert.ok(desc.length >= 70 && desc.length <= 160, `${name}: description length ${desc.length}`);
     if (name !== "index.html") assert.ok(html.includes("<!--crumbs-->"), `${name}: missing <!--crumbs--> placeholder`);
