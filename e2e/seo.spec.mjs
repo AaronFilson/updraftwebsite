@@ -22,6 +22,7 @@ for (const [path, type, crumbs] of expectedTypes) {
     expect(schema["@graph"][0]["@type"]).toBe(type);
     if (!crumbs) {
       await expect(page.locator("nav.crumbs")).toHaveCount(0);
+      expect(schema["@graph"][0].areaServed.map((a) => a.name)).toContain("Tacoma");
     } else {
       await expect(page.locator("nav.crumbs li")).toHaveText(crumbs);
       await expect(page.locator("nav.crumbs [aria-current='page']")).toHaveText(crumbs.at(-1));

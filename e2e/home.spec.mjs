@@ -64,8 +64,18 @@ test("the page runs in the planned order, with the full story on the About page"
       els.map((e) => e.id || e.className.split(" ").find((c) => ["hero", "studio", "signup", "trust"].includes(c)) || e.tagName),
     );
   expect(order).toEqual(["hero", "available", "about", "work", "signup", "trust"]);
-  await expect(page.locator(".studio").getByRole("link", { name: "Read the full story →" })).toHaveAttribute("href", "/about.html");
-  await expect(page.locator(".studio").getByRole("link", { name: "See the kilns →" })).toHaveAttribute("href", "/kilns.html");
+  await expect(page.locator(".studio").getByRole("link", { name: "More about Aaron and the studio →" })).toHaveAttribute(
+    "href",
+    "/about.html",
+  );
+  await expect(page.locator(".studio").getByRole("link", { name: "See the soda and propane kilns →" })).toHaveAttribute(
+    "href",
+    "/kilns.html",
+  );
+  await expect(page.locator("#work").getByRole("link", { name: "See earlier pottery in the archive →" })).toHaveAttribute(
+    "href",
+    "/past-work.html",
+  );
   await expect(page.locator(".trust")).toContainText("Orders ship in 1–2 business days.");
   await page.goto("/about.html");
   await expect(page.locator("h1")).toHaveText("About the studio");

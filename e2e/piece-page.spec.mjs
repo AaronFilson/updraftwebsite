@@ -33,6 +33,7 @@ test("a piece's page has its name, price, product data and its own address", asy
     "65.00",
     14,
   ]);
+  expect(product.offers[0].shippingDetails.map((s) => s.shippingRate.value)).toEqual(["33.00", "52.00"]);
   await expect(page.locator(".crumbs li")).toHaveText(["Home", "Shop", "Bowls", "Celadon footed bowl"]);
   expect(crumbs.itemListElement.map((c) => c.name)).toEqual(["Home", "Shop", "Bowls", "Celadon footed bowl"]);
   // Other pieces still for sale, each by its own page; the sold jar isn't among them.

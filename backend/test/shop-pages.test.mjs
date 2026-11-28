@@ -193,6 +193,19 @@ test("a piece's page has its name, price, photos, words and product data, and no
   assert.equal(product.offers[0].price, "65.00");
   assert.equal(product.offers[0].availability, "https://schema.org/InStock");
   assert.deepEqual(product.offers[0].availableDeliveryMethod, ["https://schema.org/OnSitePickup", "https://schema.org/ParcelService"]);
+  assert.deepEqual(
+    product.offers[0].shippingDetails.map((s) => [s.shippingDestination.addressRegion ?? "US", s.shippingRate.value]),
+    [
+      ["WA", "33.00"],
+      ["US", "52.00"],
+    ],
+  );
+  assert.equal(
+    structuredData({ id: "P", name: "Pot", variations: [{ id: "V", name: "R", price: 1000, stock: 1 }] }, "")["@graph"][0].offers[0]
+      .shippingDetails,
+    undefined,
+    "pickup-only or unweighted items omit parcel shippingDetails",
+  );
   assert.equal(product.image.length, 2);
   assert.deepEqual(
     crumbs.itemListElement.map((c) => c.name),
